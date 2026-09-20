@@ -6,8 +6,8 @@ build: ./cmd/api/build.go
 	@go build -o bin/build ./cmd/api/build.go
 
 up:
-	@docker-compose up -d db
-	@docker-compose exec db sh -c 'until pg_isready -U youruser -d yourdb; do sleep 1; done'
+	@docker-compose up -d
+	# @docker-compose exec db sh -c 'until pg_isready -U jxt-eli -d db; do sleep 1; done'
 
 migrate-up:
 	@echo "Applying migration files"
@@ -17,17 +17,18 @@ migrate-up:
 run:
 	@echo "starting server ..."
 	@go run ./cmd/api/main.go
-	@echo "server started"
+
+mig-f:
+	 @migrate -path ./migrations/ -database $(DB_URL) force 4
 
 migrate-down:
 	@echo "Applying database rollback"
-	@migrate -path $(SCHEMA) -database "${DB_URL}" down 1
-
-force-migrate:
-	@if [ -z "$(version)" ]; then \
-		echo "⚠️ Warning: No VERSION provided. Defaulting to 1."; \
-	fi
-	@migrate -path $(SCHEMA) -database "$(DB_URL)" force $(or $(version),1)
-
+	@migrate -path ./migrations -database "${DB_URL}" down 1
 dbversion:
 	@migrate -path ./migrations -database "$(DB_URL)" version
+
+# force-migrate:
+# 	@if [ -z "$(version)" ]; then \
+# 		echo "⚠️ Warning: No VERSION provided. Defaulting to 1."; \
+# 	fi
+# 	@migrate -path ./migrations/ -database "$(DB_URL)" force $(or $(version),1)

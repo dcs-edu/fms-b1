@@ -15,6 +15,7 @@ func (srv *Pool) AddbookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fuckass logic statement that's just confusing as hell
 	if claims.Role != auth.RolePrincipal && claims.Role != auth.RoleAdmin {
 		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
 		return

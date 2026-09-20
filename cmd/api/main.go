@@ -30,8 +30,8 @@ func main() {
 	defer database.Close()
 
 	// INFO: FUCKING BOILERPLATE I DON'T EVEN UNDERSTAND PROPERLY
-	srv := repository.Repository{DB : database}
-	p := handlers.Pool{Repo: &srv}
+	rpo := repository.Repository{DB : database}
+	p := handlers.Pool{Repo: &rpo}
 
 	r := mux.NewRouter()
 	r.Use(middleware.LoggingMiddleware)
@@ -40,10 +40,11 @@ func main() {
 	r.HandleFunc("/auth/register", p.CreateUserHandler).Methods("POST")
 	r.HandleFunc("/auth/login", p.LoginHandler).Methods("POST")
 
-	subRouter := r.PathPrefix("/books").Subrouter()
+	subRouter := r.PathPrefix("/new").Subrouter()
 	subRouter.Use(middleware.JwtMiddleware)
 
-	subRouter.HandleFunc("/new", p.AddbookHandler).Methods("POST")
+	subRouter.HandleFunc("/book", p.AddbookHandler).Methods("POST")
+	subRouter.HandleFunc("/student", p.StudentsHandler).Methods("POST")
 
 	// HACK: server port logging (remove if necessary)
 	fmt.Printf("server running on port%v\n", port)

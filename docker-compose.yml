@@ -15,5 +15,13 @@ services:
       timeout: 3s
       retries: 5
 
+  # migration:
+  #   build: .
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   command: migrate -path ./migrations/ -database ${DB_URL} up
+
+
 volumes:
   volume_1:
