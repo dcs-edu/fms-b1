@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/joho/godotenv v1.5.1
+	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.55.0
 )
 

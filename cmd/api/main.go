@@ -29,7 +29,8 @@ func main() {
 	}
 	defer database.Close()
 
-	// INFO: FUCKING BOILERPLATE I DON'T EVEN UNDERSTAND PROPERLY
+	// boilerplate code that does the whole struct literal nesting drama nonsense
+	// TODO: Consider replacing with constructor function call
 	rpo := repository.Repository{DB : database}
 	p := handlers.Pool{Repo: &rpo}
 

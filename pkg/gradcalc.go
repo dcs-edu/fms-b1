@@ -14,9 +14,13 @@ func CalculateGradYear(grade string) ( int16, error ) {
 	switch grade {
 	case "Daycare":
 		yearsLeft = 12
-	case "Nursery":
+	case "Nursery1":
 		yearsLeft = 11
-	case "KG":
+	case "Nursery2":
+		yearsLeft = 11
+	case "KG1":
+		yearsLeft = 10
+	case "KG2":
 		yearsLeft = 10
 	default:
 
@@ -27,7 +31,7 @@ func CalculateGradYear(grade string) ( int16, error ) {
 		if gradeNum >= 1 && gradeNum <= 9 {
 			yearsLeft = 10 - gradeNum
 		} else {
-			return 0, fmt.Errorf("error! out of range") // this is fucking sick, never found myself in a situation where I had to return 0
+			return 0, fmt.Errorf("error! out of range") // ts is fucking sick. Never found myself in a situation where I had to return 0
 		}
 	}
 

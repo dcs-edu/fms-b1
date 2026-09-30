@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/Jxt-Eli/template/internal/auth"
 )
@@ -32,16 +33,6 @@ type Role struct {
 	Role         auth.Role `json:"role"        db:"role"`
 }
 
-type Book struct {
-	BookName     string    `json:"book_name"   db:"book_name"`
-	Amount       int       `json:"amount"      db:"amount"`
-	StockCount   string    `json:"stock_count" db:"stock_count"`
-	Subject      string    `json:"subject"     db:"subject"`
-	Grade        string    `json:"grade"       db:"grade"`
-	Price        int       `json:"price"       db:"price"`
-	AddedAt      time.Time `json:"added_at"    db:"added_at"`
-}
-
 type Student struct{
 	StudentID    string    `json:"student_id"   db:"student_id"`
 	Fname        string    `json:"fname"        db:"fname"`
@@ -63,4 +54,13 @@ type Student struct{
 	AdmissionNo  uuid.UUID `json:"admission_no" db:"admission_no"`
 	GradYear     int16     `json:"grad_year"    db:"grad_year"`
 	SeqNum       int16     `json:"seq_num"      db:"seq_num"` 
+}
+
+type BookPacks struct {
+	PackID     string              `json:"book_name"   db:"book_name"`
+	Amount       int               `json:"amount"      db:"amount"`
+	StockCount   string            `json:"stock_count" db:"stock_count"`
+	Grade        string            `json:"grade"       db:"grade"`
+	Price        decimal.Decimal   `json:"price"       db:"price"`
+	AddedAt      time.Time         `json:"added_at"    db:"added_at"`
 }

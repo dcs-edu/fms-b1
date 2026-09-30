@@ -17,7 +17,7 @@ func Connect(dsn string) (*sqlx.DB, error) {
 
 	db, err := sqlx.ConnectContext(ctx, "pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("connection failed:, %w", err)
+		return nil, fmt.Errorf("\nconnection failed:\n, %w", err)
 	}
 	
 	// TODO: move this stuff to a toml config file (if necessary)

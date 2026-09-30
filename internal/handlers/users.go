@@ -18,7 +18,10 @@ type Pool struct {
 	Repo *repository.Repository
 }
 
-func newPool(repo *repository.Repository) *Pool {
+func NewPool(repo *repository.Repository) *Pool {
+	// if repo == nil {
+	// 	panic("cannot initialize repository with nil database connection")
+	// }
 	return &Pool{Repo: repo}
 }
 

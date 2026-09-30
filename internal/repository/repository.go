@@ -13,14 +13,25 @@ import (
 	"github.com/Jxt-Eli/template/internal/models"
 )
 
-type Repository struct  {
+type UserStore interface {
+	Create (ctx context.Context, user *models.User) (*models.User, error)
+	GetByEmail (ctx context.Context, email string) (*models.User, error)
+	UpdateRole (ctx context.Context, user *models.Role, role auth.Role) ( *models.Role, error )
+	InsertStudent(ctx context.Context, s models.Student) (*models.Student, error)
+}
+
+type Repository struct {
 	DB *sqlx.DB
 }
 
 func NewRepository(db *sqlx.DB) *Repository {
+	// if db == nil {
+	// 	panic("cannot initialize repository with nil database connection")
+	// }
 	return &Repository{ DB: db }
 }
 
+// TEST: use testcontainers-go
 func (r *Repository) Create (ctx context.Context, user *models.User) (*models.User, error) {
 	query :=
 	`
