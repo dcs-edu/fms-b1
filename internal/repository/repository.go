@@ -4,9 +4,9 @@ package repository
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"database/sql"
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/Jxt-Eli/template/internal/auth"
@@ -32,17 +32,17 @@ func NewRepository(db *sqlx.DB) *Repository {
 }
 
 // TEST: use testcontainers-go
-func (r *Repository) Create (ctx context.Context, user *models.User) (*models.User, error) {
+func (r *Repository) Create (ctx context.Context, user *models.User, userResponse *models.UserResponse) (*models.UserResponse, error) {
 	query :=
 	`
 		INSERT INTO users (name, phone, email, password_hash) 
 		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at
+		RETURNING email, name, role, phone, id, created_at
 	`
-	if err := r.DB.GetContext(ctx , user, query, user.Name, /*middleware.RoleTeacher,*/ user.Phone, user.Email, user.Password); err != nil {
-		return nil, fmt.Errorf("DATABASE FETCH ERROR %w", err)
+	if err := r.DB.GetContext(ctx , userResponse, query, user.Name, user.Phone, user.Email, user.Password); err != nil {
+		return nil, fmt.Errorf("database fetch error: %w", mapPgError(err))
 	}
-	return user, nil
+	return userResponse, nil
 }
 
 func (r *Repository) GetByEmail (ctx context.Context, email string) (*models.User, error) {
@@ -54,21 +54,56 @@ func (r *Repository) GetByEmail (ctx context.Context, email string) (*models.Use
 		WHERE email = $1
 	`
 	if err := r.DB.GetContext(ctx, &user, query, email); err != nil {
-		return nil, fmt.Errorf("DATABASE FETCH ERROR %w", err)
+		return nil, fmt.Errorf("database fetch error: %w", mapPgError(err))
 	}
 	return &user, nil
 }
 
-func (r *Repository) UpdateRole (ctx context.Context, user *models.Role, role auth.Role) ( *models.Role, error ) {
+func (r *Repository) GetPasswordHash (ctx context.Context, id uuid.UUID) (string, error) {
+	var hash string
+	query :=
+	`
+		SELECT password_hash
+		FROM users
+		WHERE id = $1
+	`
+	if err := r.DB.GetContext(ctx, &hash, query, id); err != nil {
+		return "", fmt.Errorf("fetch password hash: %w", mapPgError(err))
+	}
+	return hash, nil
+}
+
+func (r *Repository) UpdatePassword (ctx context.Context, id uuid.UUID, hash string) error {
+	query :=
+	`
+		UPDATE users
+		SET password_hash = $1
+		WHERE id = $2
+	`
+	res, err := r.DB.ExecContext(ctx, query, hash, id)
+	if err != nil {
+		return fmt.Errorf("update password: %w", mapPgError(err))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update password: %w", sql.ErrNoRows)
+	}
+	return nil
+}
+
+func (r *Repository) UpdateRole (ctx context.Context, user *models.Role) ( *models.Role, error ) {
 	query := 
 	`
 		UPDATE users 
 		SET role = $1
 		WHERE email = $2
+		RETURNING email, role
 	`
-	if err := r.DB.GetContext(ctx, user, query, user.Email, user.Role); err != nil {
-		slog.Error("UpdateRole error: check email and try again", "error", err)
-		return nil, err
+	if err := r.DB.GetContext(ctx, user, query, user.Role, user.Email); err != nil {
+		return nil, fmt.Errorf("UpdateRole error: %w", mapPgError(err))
 	}
 	return user, nil
 }
@@ -76,15 +111,15 @@ func (r *Repository) UpdateRole (ctx context.Context, user *models.Role, role au
 func (r *Repository) InsertStudent(ctx context.Context, s models.Student) (*models.Student, error) {
 	tx, err := r.DB.BeginTxx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("begin transaction error: %w", err)
+		return nil, fmt.Errorf("begin transaction error: %w", mapPgError(err))
 	}
 	defer tx.Rollback()
 
 	var maxSeq sql.NullInt16
 	err = tx.GetContext(ctx, &maxSeq,
-		`SELECT MAX(seq_num) FROM students WHERE grad_year = $1`, s.GradYear)
+`SELECT MAX(seq_num) FROM students WHERE grad_year = $1`, s.GradYear)
 	if err != nil {
-		return nil, fmt.Errorf("fetch max seq_num: %w", err)
+		return nil, fmt.Errorf("fetch max seq_num: %w", mapPgError(err))
 	}
 
 	nextSeq := int16(1)
@@ -99,11 +134,11 @@ func (r *Repository) InsertStudent(ctx context.Context, s models.Student) (*mode
 		VALUES (:fname, :mname,:lname, :grade, :dob, :gender, :nationality, :address, :guardian, :g_contact, :g_occupation, :e_contact, :med_con, :allergies, :photo, :created_at, :admission_no, :grad_year, :seq_num)
 	`
 	if _, err := tx.NamedExecContext(ctx, query, s); err != nil {
-		return nil, fmt.Errorf("insert student error: %w", err)
+		return nil, fmt.Errorf("insert student error: %w", mapPgError(err))
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit transaction error: %w", err)
+		return nil, fmt.Errorf("commit transaction error: %w", mapPgError(err))
 	}
 
 	return &s, nil

@@ -31,7 +31,7 @@ func CalculateGradYear(grade string) ( int16, error ) {
 		if gradeNum >= 1 && gradeNum <= 9 {
 			yearsLeft = 10 - gradeNum
 		} else {
-			return 0, fmt.Errorf("error! out of range") // ts is fucking sick. Never found myself in a situation where I had to return 0
+			return 0, fmt.Errorf("error! out of range")
 		}
 	}
 

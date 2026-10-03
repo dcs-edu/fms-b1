@@ -21,7 +21,7 @@ func TestCalculateGradYear(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T){
 			_, err := CalculateGradYear(tt.grade)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("CalculateGradYear(%q) error = %v, wantErr %v", tt.grade, err, tt.wantErr)
+				t.Errorf("CalculateGradYear(%q) error = %v, wantErr %v", tt.grade, err, tt.wantErr) // more research on the formatting verb usage
 			}
 		})
 	}

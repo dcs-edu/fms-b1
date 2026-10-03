@@ -20,4 +20,4 @@ CREATE TABLE book_issues (
     FOREIGN KEY (pack_id) REFERENCES book_packs(pack_id)
 );
 
-ALTER TABLE students ALTER COLUMN gender TYPE VARCHAR(10); -- Fix the stupid mistake claude made.
+ALTER TABLE students ALTER COLUMN gender TYPE VARCHAR(10); -- Fix the stupid mistake claude made. (No rollbacks for this fix)
