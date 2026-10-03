@@ -47,6 +47,11 @@ func main() {
 	subRouter.HandleFunc("/book", p.AddbookHandler).Methods("POST")
 	subRouter.HandleFunc("/student", p.StudentsHandler).Methods("POST")
 
+	accountRouter := r.PathPrefix("/account").Subrouter()
+	accountRouter.Use(middleware.JwtMiddleware)
+
+	accountRouter.HandleFunc("/password", p.ChangePasswordHandler).Methods("PATCH")
+
 	// HACK: server port logging (remove if necessary)
 	fmt.Printf("server running on port%v\n", port)
 	http.ListenAndServe(port, r)
