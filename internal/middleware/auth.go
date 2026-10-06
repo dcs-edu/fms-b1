@@ -46,9 +46,9 @@ func JwtMiddleware(f http.Handler) http.Handler {
 			return
 		}
 
-		tokenString := parts[1]   // just "eyJhbGc..." — this is what was missing
+		tokenString := parts[1]   // "eyJhbGc..."
 		claims := &auth.CustomClaims{}
-		// INFO: anonymous function ceremony for a fuckton of usecases I'll never hit :( *crying emoji*
+		// anonymous function boilerplate ceremony for a fuckton of usecases I'll never hit :(
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) { return jwtSecret, nil })
 		if err != nil || !token.Valid{
 			slog.Error("Invalid or failed jwt", "error", err)

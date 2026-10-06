@@ -52,6 +52,28 @@ func main() {
 
 	accountRouter.HandleFunc("/password", p.ChangePasswordHandler).Methods("PATCH")
 
+	paymentsRouter := r.PathPrefix("/payments").Subrouter()
+	paymentsRouter.Use(middleware.JwtMiddleware)
+
+	paymentsRouter.HandleFunc("", p.PaymentHistoryHandler).Methods("GET")
+	paymentsRouter.HandleFunc("", p.RecordPaymentHandler).Methods("POST")
+	paymentsRouter.HandleFunc("/students/{student_id}", p.IndividualPaymentHistoryHandler).Methods("GET")
+
+	adminRouter := r.PathPrefix("/admin").Subrouter()
+	adminRouter.Use(middleware.JwtMiddleware)
+
+	adminRouter.HandleFunc("/users/role", p.ChangeAuthZHandler).Methods("PATCH")
+
+	parentsRouter := r.PathPrefix("/parents").Subrouter()
+	parentsRouter.Use(middleware.JwtMiddleware)
+
+	parentsRouter.HandleFunc("/links", p.LinkParentHandler).Methods("POST")
+
+	meRouter := r.PathPrefix("/me").Subrouter()
+	meRouter.Use(middleware.JwtMiddleware)
+
+	meRouter.HandleFunc("/children", p.MyChildrenHandler).Methods("GET")
+
 	// HACK: server port logging (remove if necessary)
 	fmt.Printf("server running on port%v\n", port)
 	http.ListenAndServe(port, r)

@@ -100,7 +100,7 @@ func (r *Repository) UpdateRole (ctx context.Context, user *models.Role) ( *mode
 		UPDATE users 
 		SET role = $1
 		WHERE email = $2
-		RETURNING email, role
+		RETURNING name, email, role
 	`
 	if err := r.DB.GetContext(ctx, user, query, user.Role, user.Email); err != nil {
 		return nil, fmt.Errorf("UpdateRole error: %w", mapPgError(err))
