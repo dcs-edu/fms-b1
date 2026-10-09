@@ -13,8 +13,7 @@ func FormatStudentID(gradYear, seqNum int16) string {
 	return fmt.Sprintf("%02d-%04d", gradYear, seqNum)
 }
 
-// holy shit, didn't know my comments document the functions lol...
-// anyways, ts just parses the stuff you give it into a student id to be stored in the db
+// ts just parses the stuff you give it into a student id to be stored in the db
 func ParseStudentID(id string) (gradYear, seqNum int16, err error) {
 	var rest string
 	// %s soaks up anything after the number, so "30-0042abc" is rejected instead of silently accepted
