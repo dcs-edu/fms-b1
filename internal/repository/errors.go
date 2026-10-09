@@ -15,6 +15,9 @@ var (
 	ErrUndefinedColumn                = errors.New("column does not exist")
 	ErrInvalidTransactionInitiation   = errors.New("transaction failed")
 	ErrInvalidTimeRange               = errors.New("time range end must be after its start")
+	ErrStudentNotFound                = errors.New("student not found")
+	ErrBillNotFound                   = errors.New("bill not found")
+	ErrOverpayment                    = errors.New("payment is more than what is left on the bill")
 )
 
 // Postgres error codes: https://www.postgresql.org/docs/current/errcodes-appendix.html

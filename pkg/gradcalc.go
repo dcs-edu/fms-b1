@@ -13,13 +13,13 @@ func CalculateGradYear(grade string) ( int16, error ) {
 
 	switch grade {
 	case "Daycare":
-		yearsLeft = 12
+		yearsLeft = 14
 	case "Nursery1":
-		yearsLeft = 11
+		yearsLeft = 13
 	case "Nursery2":
-		yearsLeft = 11
+		yearsLeft = 12
 	case "KG1":
-		yearsLeft = 10
+		yearsLeft = 11
 	case "KG2":
 		yearsLeft = 10
 	default:

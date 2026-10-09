@@ -14,7 +14,6 @@ type Utility struct {
 	IsActive     bool      `json:"is_active"   db:"is_active"`
 }
 
-// UtilityPrice is the price of one utility for one semester. Every student owes every bill of a semester.
 type UtilityPrice struct {
 	BillID       int64             `json:"bill_id"     db:"bill_id"`
 	UtilID       int64             `json:"util_id"     db:"util_id"`
@@ -22,12 +21,35 @@ type UtilityPrice struct {
 	Amount       decimal.Decimal   `json:"amount"      db:"amount"`
 }
 
-// Payment is money a student paid towards a bill. A bill can be settled over several payments.
+// Payment statuses. Only completed payments are money actually received.
+const (
+	PaymentPending   = "pending"
+	PaymentCompleted = "completed"
+	PaymentFailed    = "failed"
+)
+
 type Payment struct {
-	TxnID        uuid.UUID         `json:"txn_id"       db:"txn_id"`
-	BillID       int64             `json:"bill_id"      db:"bill_id"`
-	AdmissionNo  uuid.UUID         `json:"admission_no" db:"admission_no"`
-	Amount       decimal.Decimal   `json:"amount"       db:"amount"`
-	PaidAt       time.Time         `json:"paid_at"      db:"paid_at"`
-	Reason       *string           `json:"reason"       db:"reason"`		// nullable: nil <-> NULL
+	TxnID        uuid.UUID         `json:"txn_id"                db:"txn_id"`
+	BillID       int64             `json:"bill_id"               db:"bill_id"`
+	AdmissionNo  uuid.UUID         `json:"admission_no"          db:"admission_no"`
+	Amount       decimal.Decimal   `json:"amount"                db:"amount"`
+	Status       string            `json:"status"                db:"status"`
+	Reference    *string           `json:"reference"             db:"reference"`			// Paystack reference; nil for cash
+	CreatedAt    time.Time         `json:"created_at"            db:"created_at"`
+	PaidAt       *time.Time        `json:"paid_at"               db:"paid_at"`			// nil until completed
+	InitiatedBy  *uuid.UUID        `json:"initiated_by,omitempty" db:"initiated_by"`	// user who started it (staff for cash, parent/bursar online); omitted when nil
+}
+
+// NewPayment is the request body for both a staff-recorded payment and a parent starting an online one.
+// It takes the short student ID (what's printed on the student's card) instead of the admission number.
+type NewPayment struct {
+	StudentID    string            `json:"student_id"`
+	BillID       int64             `json:"bill_id"`
+	Amount       decimal.Decimal   `json:"amount"`			// send as a string ("150.00") so no float rounding happens on the way in
+}
+
+// StudentPayments is one student's payment history: who they are, then what they paid.
+type StudentPayments struct {
+	Student      Std               `json:"student"`
+	Payments     []Payment         `json:"payments"`
 }

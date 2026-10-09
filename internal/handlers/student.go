@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"encoding/json"
 	"net/http"
 	"log/slog"
@@ -53,6 +52,6 @@ func (srv *Pool) StudentsHandler(w http.ResponseWriter, r *http.Request) {
 		StudentID   string         `json:"student_id"`
 	}{
 		StudentInfo: *newStd,
-		StudentID: fmt.Sprintf("%02d-%04d", newStd.GradYear, newStd.SeqNum),
+		StudentID: pkg.FormatStudentID(newStd.GradYear, newStd.SeqNum),
 	})
 }

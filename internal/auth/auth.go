@@ -16,6 +16,8 @@ const (
 	RoleAdmin       Role   = "admin"
 	RolePrincipal   Role   = "principal"
 	RoleTeacher     Role   = "teacher"
+	RoleBursar      Role   = "bursar"
+	RoleParent      Role   = "parent"
 )
 
 type CustomClaims struct {

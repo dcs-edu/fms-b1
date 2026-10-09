@@ -10,7 +10,7 @@ func TestCalculateGradYear(t *testing.T) {
 	}{
 		{ "Daycare", "Daycare", false, },
 		{ "N2", "Nursery2", false, },
-		{ "K1", "KG1", false, },
+		{ "KG2", "KG2", false, },
 		{ "Grade 2", "2", false, },
 		{ "out of range", "10", true, },
 		{ "out of range (neg)", "12", true, },
