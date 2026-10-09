@@ -25,9 +25,9 @@ type Repository struct {
 }
 
 func NewRepository(db *sqlx.DB) *Repository {
-	// if db == nil {
-	// 	panic("cannot initialize repository with nil database connection")
-	// }
+	if db == nil {
+		panic("cannot initialize repository with nil database connection")
+	}
 	return &Repository{ DB: db }
 }
 
@@ -128,12 +128,21 @@ func (r *Repository) InsertStudent(ctx context.Context, s models.Student) (*mode
 	}
 	s.SeqNum = nextSeq
 
-	query := 
+	// admission_no and created_at are left out so Postgres fills them (gen_random_uuid(), now()).
+	// Sending them from the struct would send Go's zero values: the all-zero UUID and year 1.
+	query :=
 	`
-		INSERT INTO students (fname, mname, lname, grade, dob, gender, nationality, address, guardian, g_contact, g_occupation, e_contact, med_con, allergies, photo, created_at, admission_no, grad_year, seq_num)
-		VALUES (:fname, :mname,:lname, :grade, :dob, :gender, :nationality, :address, :guardian, :g_contact, :g_occupation, :e_contact, :med_con, :allergies, :photo, :created_at, :admission_no, :grad_year, :seq_num)
+		INSERT INTO students (fname, mname, lname, grade, dob, gender, nationality, address, guardian, g_contact, g_occupation, e_contact, med_con, allergies, photo, grad_year, seq_num)
+		VALUES (:fname, :mname,:lname, :grade, :dob, :gender, :nationality, :address, :guardian, :g_contact, :g_occupation, :e_contact, :med_con, :allergies, :photo, :grad_year, :seq_num)
+		RETURNING admission_no, created_at
 	`
-	if _, err := tx.NamedExecContext(ctx, query, s); err != nil {
+	stmt, err := tx.PrepareNamedContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("prepare insert student: %w", mapPgError(err))
+	}
+	defer stmt.Close()
+
+	if err := stmt.GetContext(ctx, &s, s); err != nil {
 		return nil, fmt.Errorf("insert student error: %w", mapPgError(err))
 	}
 

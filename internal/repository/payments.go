@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/shopspring/decimal"
 
 	"github.com/Jxt-Eli/template/internal/models"
@@ -45,11 +46,44 @@ func (r *Repository) InsertUtilityPrice(ctx context.Context, p models.UtilityPri
 	return &p, nil
 }
 
-// InsertPayment records a payment towards a bill, refusing anything that would pay the bill past its price.
+// remainingOnBill is what a student still owes on a bill: its price minus their completed payments.
 //
-// It reads (how much is already paid) and then writes (the new payment), so it runs in a transaction and
+// It takes a sqlx.QueryerContext instead of using r.DB, so the same query can run inside a transaction
+// (InsertPayment passes its tx) or on its own (RemainingOnBill passes r.DB). Both types satisfy that interface.
+func remainingOnBill(ctx context.Context, q sqlx.QueryerContext, admissionNo uuid.UUID, billID int64) (decimal.Decimal, error) {
+	var price decimal.Decimal
+	err := sqlx.GetContext(ctx, q, &price, `SELECT amount FROM utility_prices WHERE bill_id = $1`, billID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return decimal.Zero, ErrBillNotFound
+	}
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("fetch bill price: %w", mapPgError(err))
+	}
+
+	var paid decimal.Decimal
+	query :=
+	`
+		SELECT COALESCE(SUM(amount), 0)
+		FROM payments
+		WHERE bill_id = $1 AND admission_no = $2 AND status = 'completed'
+	`
+	if err := sqlx.GetContext(ctx, q, &paid, query, billID, admissionNo); err != nil {
+		return decimal.Zero, fmt.Errorf("sum completed payments: %w", mapPgError(err))
+	}
+	return price.Sub(paid), nil
+}
+
+// RemainingOnBill is the check run before sending a parent to Paystack.
+// It can't stop two attempts racing each other, so the webhook checks again when money arrives.
+func (r *Repository) RemainingOnBill(ctx context.Context, admissionNo uuid.UUID, billID int64) (decimal.Decimal, error) {
+	return remainingOnBill(ctx, r.DB, admissionNo, billID)
+}
+
+// InsertPayment records a cash payment taken by an admin or principal. It is completed the moment it's saved.
+//
+// It reads (how much is still owed) and then writes (the new payment), so it runs in a transaction and
 // locks the student's row first. Two payments for the same student arriving together then run one after
-// the other: the second one waits, sees the first one's amount in the sum, and can't overpay.
+// the other: the second one waits, sees the first one in the sum, and can't overpay.
 func (r *Repository) InsertPayment(ctx context.Context, p models.Payment) (*models.Payment, error) {
 	if !p.Amount.IsPositive() {
 		return nil, ErrNonPositiveAmount
@@ -70,34 +104,22 @@ func (r *Repository) InsertPayment(ctx context.Context, p models.Payment) (*mode
 		return nil, fmt.Errorf("lock student: %w", mapPgError(err))
 	}
 
-	var price decimal.Decimal
-	err = tx.GetContext(ctx, &price, `SELECT amount FROM utility_prices WHERE bill_id = $1`, p.BillID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrBillNotFound
-	}
+	remaining, err := remainingOnBill(ctx, tx, p.AdmissionNo, p.BillID)
 	if err != nil {
-		return nil, fmt.Errorf("fetch bill price: %w", mapPgError(err))
+		return nil, err
 	}
-
-	var paid decimal.Decimal
-	err = tx.GetContext(ctx, &paid,
-		`SELECT COALESCE(SUM(amount), 0) FROM payments WHERE bill_id = $1 AND admission_no = $2`,
-		p.BillID, p.AdmissionNo)
-	if err != nil {
-		return nil, fmt.Errorf("sum earlier payments: %w", mapPgError(err))
-	}
-
-	if remaining := price.Sub(paid); p.Amount.GreaterThan(remaining) {
+	if p.Amount.GreaterThan(remaining) {
 		return nil, fmt.Errorf("%w: %s left to pay", ErrOverpayment, remaining.StringFixed(2))
 	}
 
 	query :=
 	`
-		INSERT INTO payments (bill_id, admission_no, amount, reason)
-		VALUES ($1, $2, $3, $4)
-		RETURNING txn_id, paid_at
+		INSERT INTO payments (bill_id, admission_no, amount, status, paid_at, initiated_by)
+		VALUES ($1, $2, $3, 'completed', now(), $4)
+		RETURNING txn_id, status, created_at, paid_at
 	`
-	if err := tx.QueryRowxContext(ctx, query, p.BillID, p.AdmissionNo, p.Amount, p.Reason).Scan(&p.TxnID, &p.PaidAt); err != nil {
+	if err := tx.QueryRowxContext(ctx, query, p.BillID, p.AdmissionNo, p.Amount, p.InitiatedBy).
+		Scan(&p.TxnID, &p.Status, &p.CreatedAt, &p.PaidAt); err != nil {
 		return nil, fmt.Errorf("insert payment: %w", mapPgError(err))
 	}
 
@@ -107,9 +129,85 @@ func (r *Repository) InsertPayment(ctx context.Context, p models.Payment) (*mode
 	return &p, nil
 }
 
-// ListPaymentsInRange returns every payment made in the half-open range [from, to):
-// a payment at exactly `from` is included, one at exactly `to` is not.
-// That way back-to-back ranges (Mon 00:00 -> Tue 00:00, Tue 00:00 -> Wed 00:00) never count a payment twice.
+// InsertPendingPayment saves an online payment attempt before the parent is sent to Paystack.
+// The row remembers the student, bill and amount, so the webhook only needs the reference to find it.
+func (r *Repository) InsertPendingPayment(ctx context.Context, p models.Payment) (*models.Payment, error) {
+	if !p.Amount.IsPositive() {
+		return nil, ErrNonPositiveAmount
+	}
+
+	query :=
+	`
+		INSERT INTO payments (bill_id, admission_no, amount, reference, initiated_by)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING txn_id, status, created_at
+	`
+	if err := r.DB.QueryRowxContext(ctx, query, p.BillID, p.AdmissionNo, p.Amount, p.Reference, p.InitiatedBy).
+		Scan(&p.TxnID, &p.Status, &p.CreatedAt); err != nil {
+		return nil, fmt.Errorf("insert pending payment: %w", mapPgError(err))
+	}
+	return &p, nil
+}
+
+func (r *Repository) GetPaymentByReference(ctx context.Context, reference string) (*models.Payment, error) {
+	var p models.Payment
+	query :=
+	`
+		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
+		FROM payments
+		WHERE reference = $1
+	`
+	if err := r.DB.GetContext(ctx, &p, query, reference); err != nil {
+		return nil, fmt.Errorf("get payment by reference: %w", mapPgError(err))
+	}
+	return &p, nil
+}
+
+// CompletePayment marks a payment as paid. It reports false when nothing changed: the reference is
+// unknown, or the payment was already completed. That makes a repeated webhook harmless.
+//
+// A failed payment can still become completed: a parent whose card was declined can retry on the same
+// Paystack page, and if that retry succeeds the money is real. Money received always wins.
+func (r *Repository) CompletePayment(ctx context.Context, reference string) (bool, error) {
+	query :=
+	`
+		UPDATE payments
+		SET status = 'completed', paid_at = now()
+		WHERE reference = $1 AND status <> 'completed'
+	`
+	res, err := r.DB.ExecContext(ctx, query, reference)
+	if err != nil {
+		return false, fmt.Errorf("complete payment: %w", mapPgError(err))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("complete payment: %w", err)
+	}
+	return n == 1, nil
+}
+
+// FailPayment marks a pending payment as failed. Same "false = nothing changed" rule as CompletePayment.
+func (r *Repository) FailPayment(ctx context.Context, reference string) (bool, error) {
+	query :=
+	`
+		UPDATE payments
+		SET status = 'failed'
+		WHERE reference = $1 AND status = 'pending'
+	`
+	res, err := r.DB.ExecContext(ctx, query, reference)
+	if err != nil {
+		return false, fmt.Errorf("fail payment: %w", mapPgError(err))
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("fail payment: %w", err)
+	}
+	return n == 1, nil
+}
+
+// ListPaymentsInRange returns every payment attempt started in the half-open range [from, to):
+// one at exactly `from` is included, one at exactly `to` is not, so back-to-back ranges never overlap.
+// It returns all statuses; callers that add up money must keep only completed ones.
 func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time) ([]models.Payment, error) {
 	if !to.After(from) {
 		return nil, ErrInvalidTimeRange
@@ -117,10 +215,10 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, paid_at, reason
+		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
 		FROM payments
-		WHERE paid_at >= $1 AND paid_at < $2
-		ORDER BY paid_at
+		WHERE created_at >= $1 AND created_at < $2
+		ORDER BY created_at
 	`
 	// non-nil so an empty range encodes as [] in JSON, not null
 	payments := []models.Payment{}
@@ -155,10 +253,10 @@ func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to 
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, paid_at, reason
+		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
 		FROM payments
-		WHERE admission_no = $1 AND paid_at >= $2 AND paid_at < $3
-		ORDER BY paid_at
+		WHERE admission_no = $1 AND created_at >= $2 AND created_at < $3
+		ORDER BY created_at
 	`
 	// non-nil so an empty range encodes as [] in JSON, not null
 	individualPayments := []models.Payment{}

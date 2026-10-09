@@ -1,25 +1,29 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
-	"log/slog"
+	"database/sql"
 	"net/http"
+	"log/slog"
+	"errors"
 	"slices"
 	"time"
 
 	"github.com/gorilla/mux"
 
-	"github.com/Jxt-Eli/template/internal/auth"
 	"github.com/Jxt-Eli/template/internal/middleware"
-	"github.com/Jxt-Eli/template/internal/models"
 	"github.com/Jxt-Eli/template/internal/repository"
+	"github.com/Jxt-Eli/template/internal/models"
+	"github.com/Jxt-Eli/template/internal/auth"
 	"github.com/Jxt-Eli/template/pkg"
 )
 
-// paymentStaff are the roles that can see and record anyone's payments.
+// paymentStaff are the roles that can see anyone's payments. Recording cash is narrower: see cashStaff.
 var paymentStaff = []auth.Role{auth.RoleAdmin, auth.RolePrincipal, auth.RoleBursar}
+
+// cashStaff are the roles that can record a payment no money went through Paystack for.
+// The bursar is left out on purpose: they pay online like everyone else, so every payment they make has a Paystack trail.
+var cashStaff = []auth.Role{auth.RoleAdmin, auth.RolePrincipal}
 
 // GET /payments?range=this_month
 func (srv *Pool) PaymentHistoryHandler(w http.ResponseWriter, r *http.Request) {
@@ -108,17 +112,24 @@ func (srv *Pool) IndividualPaymentHistoryHandler(w http.ResponseWriter, r *http.
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	// which user started each payment is internal (it can be a staff member); parents don't see it
+	if claims.Role == auth.RoleParent {
+		for i := range payments {
+			payments[i].InitiatedBy = nil
+		}
+	}
 	writeJSON(w, r, http.StatusOK, models.StudentPayments{Student: *std, Payments: payments})
 }
 
-// POST /payments   {"student_id": "30-0042", "bill_id": 3, "amount": "150.00", "reason": "cash, receipt #0042"}
+// POST /payments   {"student_id": "30-0042", "bill_id": 3, "amount": "150.00"}
+// An admin or principal recording a cash payment. Who recorded it comes from their token, not the body.
 func (srv *Pool) RecordPaymentHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if !slices.Contains(paymentStaff, claims.Role) {
+	if !slices.Contains(cashStaff, claims.Role) {
 		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
 		return
 	}
@@ -151,7 +162,7 @@ func (srv *Pool) RecordPaymentHandler(w http.ResponseWriter, r *http.Request) {
 		BillID:      req.BillID,
 		AdmissionNo: std.AdmissionNo,
 		Amount:      req.Amount,
-		Reason:      req.Reason,
+		InitiatedBy: &claims.ID,
 	})
 	switch {
 	case errors.Is(err, repository.ErrNonPositiveAmount), errors.Is(err, repository.ErrOverpayment):

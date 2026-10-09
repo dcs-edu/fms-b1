@@ -14,18 +14,20 @@ import (
 	"github.com/Jxt-Eli/template/internal/auth"
 	"github.com/Jxt-Eli/template/internal/middleware"
 	"github.com/Jxt-Eli/template/internal/models"
+	"github.com/Jxt-Eli/template/internal/paystack"
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
 type Pool struct {
-	Repo *repository.Repository
+	Repo     *repository.Repository
+	Paystack *paystack.Client
 }
 
-func NewPool(repo *repository.Repository) *Pool {
+func NewPool(repo *repository.Repository, ps *paystack.Client) *Pool {
 	// if repo == nil {
 	// 	panic("cannot initialize repository with nil database connection")
 	// }
-	return &Pool{Repo: repo}
+	return &Pool{Repo: repo, Paystack: ps}
 }
 
 // TEST: TEST HANDLER FUNCTIONS INDEPENDENTLY

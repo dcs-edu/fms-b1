@@ -11,8 +11,9 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/Jxt-Eli/template/internal/db"
-	"github.com/Jxt-Eli/template/internal/middleware"
 	"github.com/Jxt-Eli/template/internal/handlers"
+	"github.com/Jxt-Eli/template/internal/middleware"
+	"github.com/Jxt-Eli/template/internal/paystack"
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
@@ -22,17 +23,23 @@ func main() {
 	}
 	dsn := os.Getenv("DB_URL")
 	port := os.Getenv("PORT")
+	secretKey := os.Getenv("PAYSTACK_SECRET_KEY")
+
+	if dsn == "" || port == "" || secretKey == "" {
+		log.Fatal("error: missing port, dsn, or paystack secret")
+	}
+
 	database, err := db.Connect(dsn)
 	if err != nil {
-		log.Fatalf("Database connection failed: %v" ,err)
+		log.Fatalf("Database connection failed: %v", err)
 		return
 	}
 	defer database.Close()
 
-	// boilerplate code that does the whole struct literal nesting drama nonsense
-	// TODO: Consider replacing with constructor function call
-	rpo := repository.Repository{DB : database}
-	p := handlers.Pool{Repo: &rpo}
+	// constructor function ceremony
+	ps := paystack.NewClient(secretKey)
+	rpo := repository.NewRepository(database)
+	p := handlers.NewPool(rpo, ps)
 
 	r := mux.NewRouter()
 	r.Use(middleware.LoggingMiddleware)
@@ -40,6 +47,8 @@ func main() {
 	r.HandleFunc("/", handler).Methods("GET")
 	r.HandleFunc("/auth/register", p.CreateUserHandler).Methods("POST")
 	r.HandleFunc("/auth/login", p.LoginHandler).Methods("POST")
+	// public on purpose: Paystack has no JWT, the signature header is what proves the call is real
+	r.HandleFunc("/webhooks/paystack", p.PaystackWebhookHandler).Methods("POST")
 
 	subRouter := r.PathPrefix("/new").Subrouter()
 	subRouter.Use(middleware.JwtMiddleware)
@@ -58,6 +67,14 @@ func main() {
 	paymentsRouter.HandleFunc("", p.PaymentHistoryHandler).Methods("GET")
 	paymentsRouter.HandleFunc("", p.RecordPaymentHandler).Methods("POST")
 	paymentsRouter.HandleFunc("/students/{student_id}", p.IndividualPaymentHistoryHandler).Methods("GET")
+	paymentsRouter.HandleFunc("/online", p.OnlinePaymentHandler).Methods("POST")
+	paymentsRouter.HandleFunc("/online/{reference}", p.VerifyOnlinePaymentHandler).Methods("GET")
+
+	utilitiesRouter := r.PathPrefix("/utilities").Subrouter()
+	utilitiesRouter.Use(middleware.JwtMiddleware)
+
+	utilitiesRouter.HandleFunc("", p.CreateUtilityHandler).Methods("POST")
+	utilitiesRouter.HandleFunc("/{util_id}/prices", p.CreateUtilityPriceHandler).Methods("POST")
 
 	adminRouter := r.PathPrefix("/admin").Subrouter()
 	adminRouter.Use(middleware.JwtMiddleware)
@@ -76,8 +93,8 @@ func main() {
 
 	// HACK: server port logging (remove if necessary)
 	fmt.Printf("server running on port%v\n", port)
-	http.ListenAndServe(port, r)
-
+	// ListenAndServe only returns on failure (e.g. the port is already taken); without log.Fatal that error vanished
+	log.Fatal(http.ListenAndServe(port, r))
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
