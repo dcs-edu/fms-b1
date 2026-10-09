@@ -3,11 +3,9 @@ package auth
 
 import (
 	"time"
-	"os"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 )
 
 type Role string
@@ -27,10 +25,9 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(id uuid.UUID, email string, role Role) (string, error) {
-
-	godotenv.Load()
-	jwtSecret := os.Getenv("JWTSECRET")
+// GenerateToken takes the secret as an argument instead of reading .env itself:
+// main reads it once at startup and passes it down.
+func GenerateToken(jwtSecret []byte, id uuid.UUID, email string, role Role) (string, error) {
 	claims := CustomClaims {
 		ID: id,
 		Email: email,
@@ -41,5 +38,5 @@ func GenerateToken(id uuid.UUID, email string, role Role) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(jwtSecret))
+	return token.SignedString(jwtSecret)
 }

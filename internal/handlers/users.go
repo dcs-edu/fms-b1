@@ -19,15 +19,13 @@ import (
 )
 
 type Pool struct {
-	Repo     *repository.Repository
-	Paystack *paystack.Client
+	Repo      *repository.Repository
+	Paystack  *paystack.Client
+	JWTSecret []byte // signs login tokens; the same secret the JWT middleware checks them with
 }
 
-func NewPool(repo *repository.Repository, ps *paystack.Client) *Pool {
-	// if repo == nil {
-	// 	panic("cannot initialize repository with nil database connection")
-	// }
-	return &Pool{Repo: repo, Paystack: ps}
+func NewPool(repo *repository.Repository, ps *paystack.Client, jwtSecret []byte) *Pool {
+	return &Pool{Repo: repo, Paystack: ps, JWTSecret: jwtSecret}
 }
 
 // TEST: TEST HANDLER FUNCTIONS INDEPENDENTLY
@@ -84,7 +82,7 @@ func (srv *Pool) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateToken(user.ID, user.Email, user.Role)
+	token, err := auth.GenerateToken(srv.JWTSecret, user.ID, user.Email, user.Role)
 	if err != nil {
 		slog.Error("jwt error", "error", err)
 		http.Error(w, "400 invalid email or password", http.StatusBadRequest)

@@ -7,12 +7,10 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"os"
 	"log/slog"
 
 	"github.com/Jxt-Eli/template/internal/auth"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/joho/godotenv"
 )
 
 type ctxKey string
@@ -29,11 +27,15 @@ func LoggingMiddleware(f http.Handler) http.Handler {
 	})
 }
 
+// Config holds what JwtMiddleware needs. main builds it once at startup, so the secret is read once,
+// not on every request. Its method is the middleware: cfg.JwtMiddleware has the secret in reach.
+type Config struct {
+	JWTSecret []byte
+}
 
-func JwtMiddleware(f http.Handler) http.Handler {
+func (cfg Config) JwtMiddleware(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		godotenv.Load()
-		jwtSecret := []byte(os.Getenv("JWTSECRET"))
+		jwtSecret := cfg.JWTSecret
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "missing authorization header", http.StatusUnauthorized)

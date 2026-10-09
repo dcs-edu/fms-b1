@@ -24,10 +24,13 @@ func main() {
 	dsn := os.Getenv("DB_URL")
 	port := os.Getenv("PORT")
 	secretKey := os.Getenv("PAYSTACK_SECRET_KEY")
+	jwtSecret := []byte(os.Getenv("JWTSECRET"))
 
-	if dsn == "" || port == "" || secretKey == "" {
-		log.Fatal("error: missing port, dsn, or paystack secret")
+	// an empty JWTSECRET would sign every token with an empty key, which anyone can forge
+	if dsn == "" || port == "" || secretKey == "" || len(jwtSecret) == 0 {
+		log.Fatal("error: missing port, dsn, paystack secret, or jwt secret")
 	}
+	jwtCfg := middleware.Config{JWTSecret: jwtSecret}
 
 	database, err := db.Connect(dsn)
 	if err != nil {
@@ -39,7 +42,7 @@ func main() {
 	// constructor function ceremony
 	ps := paystack.NewClient(secretKey)
 	rpo := repository.NewRepository(database)
-	p := handlers.NewPool(rpo, ps)
+	p := handlers.NewPool(rpo, ps, jwtSecret)
 
 	r := mux.NewRouter()
 	r.Use(middleware.LoggingMiddleware)
@@ -51,18 +54,18 @@ func main() {
 	r.HandleFunc("/webhooks/paystack", p.PaystackWebhookHandler).Methods("POST")
 
 	subRouter := r.PathPrefix("/new").Subrouter()
-	subRouter.Use(middleware.JwtMiddleware)
+	subRouter.Use(jwtCfg.JwtMiddleware)
 
 	subRouter.HandleFunc("/book", p.AddbookHandler).Methods("POST")
 	subRouter.HandleFunc("/student", p.StudentsHandler).Methods("POST")
 
 	accountRouter := r.PathPrefix("/account").Subrouter()
-	accountRouter.Use(middleware.JwtMiddleware)
+	accountRouter.Use(jwtCfg.JwtMiddleware)
 
 	accountRouter.HandleFunc("/password", p.ChangePasswordHandler).Methods("PATCH")
 
 	paymentsRouter := r.PathPrefix("/payments").Subrouter()
-	paymentsRouter.Use(middleware.JwtMiddleware)
+	paymentsRouter.Use(jwtCfg.JwtMiddleware)
 
 	paymentsRouter.HandleFunc("", p.PaymentHistoryHandler).Methods("GET")
 	paymentsRouter.HandleFunc("", p.RecordPaymentHandler).Methods("POST")
@@ -71,23 +74,23 @@ func main() {
 	paymentsRouter.HandleFunc("/online/{reference}", p.VerifyOnlinePaymentHandler).Methods("GET")
 
 	utilitiesRouter := r.PathPrefix("/utilities").Subrouter()
-	utilitiesRouter.Use(middleware.JwtMiddleware)
+	utilitiesRouter.Use(jwtCfg.JwtMiddleware)
 
 	utilitiesRouter.HandleFunc("", p.CreateUtilityHandler).Methods("POST")
 	utilitiesRouter.HandleFunc("/{util_id}/prices", p.CreateUtilityPriceHandler).Methods("POST")
 
 	adminRouter := r.PathPrefix("/admin").Subrouter()
-	adminRouter.Use(middleware.JwtMiddleware)
+	adminRouter.Use(jwtCfg.JwtMiddleware)
 
 	adminRouter.HandleFunc("/users/role", p.ChangeAuthZHandler).Methods("PATCH")
 
 	parentsRouter := r.PathPrefix("/parents").Subrouter()
-	parentsRouter.Use(middleware.JwtMiddleware)
+	parentsRouter.Use(jwtCfg.JwtMiddleware)
 
 	parentsRouter.HandleFunc("/links", p.LinkParentHandler).Methods("POST")
 
 	meRouter := r.PathPrefix("/me").Subrouter()
-	meRouter.Use(middleware.JwtMiddleware)
+	meRouter.Use(jwtCfg.JwtMiddleware)
 
 	meRouter.HandleFunc("/children", p.MyChildrenHandler).Methods("GET")
 
@@ -98,5 +101,5 @@ func main() {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<h1>Welcome to my fuckass Go template backend code</h1><h3>Just modify a few things and Bob's your uncle.</h3>\nBTW,... You requested: %s\n This is your request struct btw:\n %v", r.URL.Path, r)
+	fmt.Fprintf(w, "<h1>If you're seeing this, the backend works and the databse is running</h1><h3>How do I know? cause the backend won't start without a connection.</h3>")
 }
