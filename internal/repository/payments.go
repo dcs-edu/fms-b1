@@ -15,18 +15,45 @@ import (
 	"github.com/Jxt-Eli/template/internal/models"
 )
 
-func (r *Repository) GetUtilities (ctx context.Context) (*[]models.Utility, error) {
-	query := 
+func (r *Repository) GetUtilities (ctx context.Context) ([]models.Bill, error) {
+	query :=
 	`
-		SELECT u.util_name, up.amount, up.sem FROM utilities u
+		SELECT up.bill_id, u.util_name, up.sem, up.amount
+		FROM utilities u
 		JOIN utility_prices up ON u.id = up.util_id
 		WHERE u.is_active = true
+		ORDER BY up.sem, u.util_name
 	`
-	var u []models.Utility
-	if err := r.DB.SelectContext(ctx, &u, query); err != nil {
-		return nil, err
+	var bills []models.Bill
+	if err := r.DB.SelectContext(ctx, &bills, query); err != nil {
+		return nil, fmt.Errorf("list utilities: %w", mapPgError(err))
 	}
-	return &u, nil
+	return bills, nil
+}
+
+// StudentBills is every bill with what this student has paid on it and what is left.
+// It is remainingOnBill for all bills at once, so the two must agree: only completed payments count.
+func (r *Repository) StudentBills(ctx context.Context, admissionNo uuid.UUID) ([]models.StudentBill, error) {
+	// The payment filters sit in the LEFT JOIN's ON, not in a WHERE. In a WHERE, a bill with no
+	// payments yet (p.status is NULL) would be filtered out, and the bills nobody has paid would vanish.
+	// No is_active filter: switching a utility off must not hide money a student still owes on it.
+	query :=
+	`
+		SELECT up.bill_id, u.util_name, up.sem, up.amount,
+		       COALESCE(SUM(p.amount), 0)             AS paid,
+		       up.amount - COALESCE(SUM(p.amount), 0) AS remaining
+		FROM utility_prices up
+		JOIN utilities u ON u.id = up.util_id
+		LEFT JOIN payments p
+		       ON p.bill_id = up.bill_id AND p.admission_no = $1 AND p.status = 'completed'
+		GROUP BY up.bill_id, u.util_name
+		ORDER BY up.sem, u.util_name
+	`
+	var bills []models.StudentBill
+	if err := r.DB.SelectContext(ctx, &bills, query, admissionNo); err != nil {
+		return nil, fmt.Errorf("student bills: %w", mapPgError(err))
+	}
+	return bills, nil
 }
 
 func (r *Repository) InsertUtility(ctx context.Context, u models.Utility) (*models.Utility, error) {

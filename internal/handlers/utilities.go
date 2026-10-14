@@ -18,7 +18,8 @@ import (
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
-// GET /utilities/list (List all available utilities and their prices)
+// GET /utilities
+// Every bill of the active utilities: one row per utility per semester, with its bill_id.
 func (srv *Pool) ListUtilityHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
 	if !ok {
@@ -31,12 +32,13 @@ func (srv *Pool) ListUtilityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
-	// var util []models.Utility
-	util, err := srv.Repo.GetUtilities(ctx)
+	bills, err := srv.Repo.GetUtilities(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "(UtilHandler error): failed to fetch utilities ", "error", err)
+		slog.ErrorContext(ctx, "GetUtilities error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
 	}
-	writeJSON(w, r, http.StatusOK, util)
+	writeJSON(w, r, http.StatusOK, bills)
 }
 
 // POST /utilities   {"util_name": "Tuition"}

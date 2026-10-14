@@ -25,17 +25,29 @@ func (r *Repository) GetStd(ctx context.Context, gradYear, seqNum int16) (*model
 	return &std, nil
 }
 
-func (r *Repository) GetAllStudents(ctx context.Context) (*[]models.Std, error) {
-
-	var std []models.Std
+// GetAllStudents scans the same way as ListChildren: student_id is not a column, so grad_year and
+// seq_num are read alongside each Std and turned into the ID in Go.
+func (r *Repository) GetAllStudents(ctx context.Context) ([]models.Std, error) {
+	var rows []struct {
+		models.Std
+		GradYear int16 `db:"grad_year"`
+		SeqNum   int16 `db:"seq_num"`
+	}
 	query :=
 	`
-		SELECT student_id, fname, lname, mname, grade
+		SELECT admission_no, fname, lname, grade, grad_year, seq_num
 		FROM students
+		ORDER BY grade, lname, fname
 	`
-	if err := r.DB.GetContext(ctx, &std, query); err != nil {
-		return nil, fmt.Errorf("get student: %w", mapPgError(err))
+	if err := r.DB.SelectContext(ctx, &rows, query); err != nil {
+		return nil, fmt.Errorf("list students: %w", mapPgError(err))
 	}
-	return &std, nil
+
+	students := make([]models.Std, 0, len(rows))
+	for _, row := range rows {
+		row.Std.StudentID = pkg.FormatStudentID(row.GradYear, row.SeqNum)
+		students = append(students, row.Std)
+	}
+	return students, nil
 }
 

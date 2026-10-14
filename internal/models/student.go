@@ -31,7 +31,7 @@ type Student struct{
 
 // Std is a slim view of a student, for responses that only need to say who the student is.
 type Std struct {
-	StudentID    string    `json:"student_id"   db:"student_id"`			// derived from grad_year + seq_num, not a column
+	StudentID    string    `json:"student_id"   db:"-"`			// derived from grad_year + seq_num, not a column
 	AdmissionNo  uuid.UUID `json:"-"            db:"admission_no"`	// for follow-up queries only; never sent to clients
 	Fname        string    `json:"fname"        db:"fname"`
 	Lname        string    `json:"lname"        db:"lname"`

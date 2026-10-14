@@ -154,35 +154,37 @@ func (r *Repository) InsertStudent(ctx context.Context, s models.Student) (*mode
 	return &s, nil
 }
 
-// GET /Me : fetch user profile data
-func (r *Repository) GetUser (ctx context.Context, user models.User) (*models.User, error) {
-	query := 
+// GetUser is the profile behind GET /me.
+// Columns are named instead of SELECT *, so the password hash never leaves the database.
+func (r *Repository) GetUser (ctx context.Context, id uuid.UUID) (*models.UserResponse, error) {
+	var user models.UserResponse
+	query :=
 	`
-		SELECT * FROM users
-		WHERE email = $1
+		SELECT id, name, role, email, phone, created_at
+		FROM users
+		WHERE id = $1
 	`
-	err := r.DB.GetContext(ctx, &user, query, user.Email)
+	err := r.DB.GetContext(ctx, &user, query, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
-	return nil, fmt.Errorf("user not found: %w", mapPgError(err))
+		return nil, fmt.Errorf("get user: %w", mapPgError(err))
 	}
 	return &user, nil
 }
 
-func (r *Repository) GetAllUsers (ctx context.Context) (*[]models.User, error) {
-	query := 
+func (r *Repository) GetAllUsers (ctx context.Context) ([]models.UserResponse, error) {
+	query :=
 	`
-		SELECT * FROM users
+		SELECT id, name, role, email, phone, created_at
+		FROM users
+		ORDER BY name
 	`
-	var users []models.User
-	err := r.DB.GetContext(ctx, &users, query)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
+	// SelectContext never returns sql.ErrNoRows: no users is just an empty list
+	var users []models.UserResponse
+	if err := r.DB.SelectContext(ctx, &users, query); err != nil {
 		return nil, fmt.Errorf("GetAllUsers error: %w", mapPgError(err))
 	}
-	return &users, nil
+	return users, nil
 }

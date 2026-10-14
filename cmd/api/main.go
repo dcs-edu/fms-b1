@@ -77,16 +77,22 @@ func main() {
 	utilitiesRouter := r.PathPrefix("/utilities").Subrouter()
 	utilitiesRouter.Use(jwtCfg.JwtMiddleware)
 
+	// same path, different methods: GET reads the list, POST adds to it
+	utilitiesRouter.HandleFunc("", p.ListUtilityHandler).Methods("GET")
 	utilitiesRouter.HandleFunc("", p.CreateUtilityHandler).Methods("POST")
-	utilitiesRouter.HandleFunc("/list", p.ListUtilityHandler).Methods("POST")
 	utilitiesRouter.HandleFunc("/{util_id}/prices", p.CreateUtilityPriceHandler).Methods("POST")
+
+	studentsRouter := r.PathPrefix("/students").Subrouter()
+	studentsRouter.Use(jwtCfg.JwtMiddleware)
+
+	studentsRouter.HandleFunc("", p.ListStudentsHandler).Methods("GET")
+	studentsRouter.HandleFunc("/{student_id}/bills", p.StudentBillsHandler).Methods("GET")
 
 	adminRouter := r.PathPrefix("/admin").Subrouter()
 	adminRouter.Use(jwtCfg.JwtMiddleware)
 
+	adminRouter.HandleFunc("/users", p.ShowUserRolesHandler).Methods("GET")
 	adminRouter.HandleFunc("/users/role", p.ChangeAuthZHandler).Methods("PATCH")
-	adminRouter.Use(jwtCfg.JwtMiddleware)
-	adminRouter.HandleFunc("", p.ShowUserRoles).Methods("GET")
 
 	parentsRouter := r.PathPrefix("/parents").Subrouter()
 	parentsRouter.Use(jwtCfg.JwtMiddleware)
@@ -94,15 +100,20 @@ func main() {
 	parentsRouter.HandleFunc("/links", p.LinkParentHandler).Methods("POST")
 
 	meRouter := r.PathPrefix("/me").Subrouter()
-	meRouter.HandleFunc("", p.ProfileHandler).Methods("GET")
+	meRouter.Use(jwtCfg.JwtMiddleware)
 
+	meRouter.HandleFunc("", p.ProfileHandler).Methods("GET")
 	meRouter.HandleFunc("/children", p.MyChildrenHandler).Methods("GET")
 
 	server := &http.Server{
-		Addr:         port,
-		Handler:      r,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Addr:              port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		// longer than the Paystack client's 10s timeout: OnlinePaymentHandler can wait that long on Paystack
+		// and still needs time to answer. A WriteTimeout shorter than that cuts the reply off mid-payment.
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	// HACK: server port logging (remove if necessary)

@@ -168,17 +168,27 @@ func (srv *Pool) ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Get user profile handler
+// GET /me
+// Who is logged in. Like ChangePasswordHandler, the user comes from the token, never from the request,
+// so nobody can ask for someone else's profile.
 func (srv *Pool) ProfileHandler(w http.ResponseWriter, r *http.Request) {
-	var user models.User
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	ctx := r.Context()
 
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	profile, err := srv.Repo.GetUser(ctx, claims.ID)
+	if errors.Is(err, repository.ErrUserNotFound) {
+		// valid token, but the account was deleted after it was issued
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
-	profile, err := srv.Repo.GetUser(ctx, user)
 	if err != nil {
-		slog.ErrorContext(ctx, "profile fetch error", "error", err)
+		slog.ErrorContext(ctx, "GetUser error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 	writeJSON(w, r, http.StatusOK, profile)
 }
