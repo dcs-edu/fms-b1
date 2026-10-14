@@ -55,3 +55,14 @@ func (srv *Pool) StudentsHandler(w http.ResponseWriter, r *http.Request) {
 		StudentID: pkg.FormatStudentID(newStd.GradYear, newStd.SeqNum),
 	})
 }
+
+func (srv *Pool) StudentProfileHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	allStudents, err := srv.Repo.GetAllStudents(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "StudentProfileHandler error", "error", err)
+	}
+	writeJSON(w, r, http.StatusOK, allStudents)
+	
+}

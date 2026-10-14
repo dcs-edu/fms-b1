@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -77,12 +78,15 @@ func main() {
 	utilitiesRouter.Use(jwtCfg.JwtMiddleware)
 
 	utilitiesRouter.HandleFunc("", p.CreateUtilityHandler).Methods("POST")
+	utilitiesRouter.HandleFunc("/list", p.ListUtilityHandler).Methods("POST")
 	utilitiesRouter.HandleFunc("/{util_id}/prices", p.CreateUtilityPriceHandler).Methods("POST")
 
 	adminRouter := r.PathPrefix("/admin").Subrouter()
 	adminRouter.Use(jwtCfg.JwtMiddleware)
 
 	adminRouter.HandleFunc("/users/role", p.ChangeAuthZHandler).Methods("PATCH")
+	adminRouter.Use(jwtCfg.JwtMiddleware)
+	adminRouter.HandleFunc("", p.ShowUserRoles).Methods("GET")
 
 	parentsRouter := r.PathPrefix("/parents").Subrouter()
 	parentsRouter.Use(jwtCfg.JwtMiddleware)
@@ -90,16 +94,23 @@ func main() {
 	parentsRouter.HandleFunc("/links", p.LinkParentHandler).Methods("POST")
 
 	meRouter := r.PathPrefix("/me").Subrouter()
-	meRouter.Use(jwtCfg.JwtMiddleware)
+	meRouter.HandleFunc("", p.ProfileHandler).Methods("GET")
 
 	meRouter.HandleFunc("/children", p.MyChildrenHandler).Methods("GET")
+
+	server := &http.Server{
+		Addr:         port,
+		Handler:      r,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
 
 	// HACK: server port logging (remove if necessary)
 	fmt.Printf("server running on port%v\n", port)
 	// ListenAndServe only returns on failure (e.g. the port is already taken); without log.Fatal that error vanished
-	log.Fatal(http.ListenAndServe(port, r))
+	log.Fatal(server.ListenAndServe())
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<h1>If you're seeing this, the backend works and the databse is running</h1><h3>How do I know? cause the backend won't start without a connection.</h3>")
+	fmt.Fprintf(w, "<h1>If you're seeing this, the backend works and the database is running</h1><h3>How do I know? cause the backend won't start without a connection.</h3>")
 }

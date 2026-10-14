@@ -56,3 +56,14 @@ func (srv *Pool) ChangeAuthZHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, r, http.StatusOK, updated)
 }
+
+func (srv *Pool) ShowUserRoles (w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	users, err := srv.Repo.GetAllUsers(ctx)
+	if err != nil  {
+		slog.Error("ShowUserRoles error", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+	writeJSON(w, r, http.StatusOK, users)
+}

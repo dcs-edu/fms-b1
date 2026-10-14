@@ -18,6 +18,27 @@ import (
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
+// GET /utilities/list (List all available utilities and their prices)
+func (srv *Pool) ListUtilityHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !slices.Contains(paymentStaff, claims.Role) {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	// var util []models.Utility
+	util, err := srv.Repo.GetUtilities(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "(UtilHandler error): failed to fetch utilities ", "error", err)
+	}
+	writeJSON(w, r, http.StatusOK, util)
+}
+
 // POST /utilities   {"util_name": "Tuition"}
 func (srv *Pool) CreateUtilityHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)

@@ -193,3 +193,7 @@ Unit tests currently cover the helpers in `pkg/`. Handler tests are planned.
 ## Status
 
 Work in progress: the backend works end to end with Paystack test keys, and a frontend is next.
+
+<div align="center">
+  <sub>Proudly Ghanaian 🇬🇭💖.</sub>
+</div>

@@ -167,3 +167,19 @@ func (srv *Pool) ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// Get user profile handler
+func (srv *Pool) ProfileHandler(w http.ResponseWriter, r *http.Request) {
+	var user models.User
+	ctx := r.Context()
+
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}
+	profile, err := srv.Repo.GetUser(ctx, user)
+	if err != nil {
+		slog.ErrorContext(ctx, "profile fetch error", "error", err)
+	}
+	writeJSON(w, r, http.StatusOK, profile)
+}
+

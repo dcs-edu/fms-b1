@@ -3,7 +3,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -19,11 +18,15 @@ const UserContextKey  ctxKey = "claims"
 
 func LoggingMiddleware(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-		fmt.Println(r.URL.Path)
+		// fmt.Println()
 		start := time.Now()
 		f.ServeHTTP(w, r)
 		end := time.Since(start)
-		fmt.Printf("t = %v", end)
+		slog.Info("http request handled",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"duration", end.String(),
+			)
 	})
 }
 

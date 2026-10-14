@@ -13,8 +13,21 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/Jxt-Eli/template/internal/models"
-	"github.com/Jxt-Eli/template/pkg"
 )
+
+func (r *Repository) GetUtilities (ctx context.Context) (*[]models.Utility, error) {
+	query := 
+	`
+		SELECT u.util_name, up.amount, up.sem FROM utilities u
+		JOIN utility_prices up ON u.id = up.util_id
+		WHERE u.is_active = true
+	`
+	var u []models.Utility
+	if err := r.DB.SelectContext(ctx, &u, query); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
 
 func (r *Repository) InsertUtility(ctx context.Context, u models.Utility) (*models.Utility, error) {
 	query :=
@@ -226,23 +239,6 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 		return nil, fmt.Errorf("list payments: %w", mapPgError(err))
 	}
 	return payments, nil
-}
-
-// GetStd finds a student by the two columns their student ID is built from.
-// It also loads admission_no, so callers can go on to query the tables that reference it.
-func (r *Repository) GetStd(ctx context.Context, gradYear, seqNum int16) (*models.Std, error) {
-	var std models.Std
-	query :=
-	`
-		SELECT admission_no, fname, lname, grade
-		FROM students
-		WHERE grad_year = $1 AND seq_num = $2
-	`
-	if err := r.DB.GetContext(ctx, &std, query, gradYear, seqNum); err != nil {
-		return nil, fmt.Errorf("get student: %w", mapPgError(err))
-	}
-	std.StudentID = pkg.FormatStudentID(gradYear, seqNum)
-	return &std, nil
 }
 
 // GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student.

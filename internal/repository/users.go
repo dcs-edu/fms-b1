@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"errors"
 
 	"database/sql"
 	"github.com/google/uuid"
@@ -153,4 +154,35 @@ func (r *Repository) InsertStudent(ctx context.Context, s models.Student) (*mode
 	return &s, nil
 }
 
-// func (r *Repository) AddBook (ctx context.Context, subject *models.Book) (error)
+// GET /Me : fetch user profile data
+func (r *Repository) GetUser (ctx context.Context, user models.User) (*models.User, error) {
+	query := 
+	`
+		SELECT * FROM users
+		WHERE email = $1
+	`
+	err := r.DB.GetContext(ctx, &user, query, user.Email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+	return nil, fmt.Errorf("user not found: %w", mapPgError(err))
+	}
+	return &user, nil
+}
+
+func (r *Repository) GetAllUsers (ctx context.Context) (*[]models.User, error) {
+	query := 
+	`
+		SELECT * FROM users
+	`
+	var users []models.User
+	err := r.DB.GetContext(ctx, &users, query)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GetAllUsers error: %w", mapPgError(err))
+	}
+	return &users, nil
+}
