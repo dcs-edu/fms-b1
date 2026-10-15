@@ -21,6 +21,21 @@ type UtilityPrice struct {
 	Amount       decimal.Decimal   `json:"amount"      db:"amount"`
 }
 
+// Bill is a utility price with the utility's name joined in: what a person reads when picking a bill.
+type Bill struct {
+	BillID       int64             `json:"bill_id"     db:"bill_id"`
+	UtilName     string            `json:"util_name"   db:"util_name"`
+	Sem          string            `json:"sem"         db:"sem"`
+	Amount       decimal.Decimal   `json:"amount"      db:"amount"`
+}
+
+// StudentBill is a Bill as one student sees it: how much of it they have paid and what is left.
+type StudentBill struct {
+	Bill
+	Paid         decimal.Decimal   `json:"paid"        db:"paid"`			// completed payments only
+	Remaining    decimal.Decimal   `json:"remaining"   db:"remaining"`
+}
+
 // Payment statuses. Only completed payments are money actually received.
 const (
 	PaymentPending   = "pending"

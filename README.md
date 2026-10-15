@@ -136,6 +136,8 @@ printed on their card. Money is sent as a string (`"150.00"`) so it never passes
 | POST | `/auth/register` | anyone | `{"name", "email", "phone", "password"}`; new accounts are parents |
 | POST | `/auth/login` | anyone | `{"email", "password"}` → `{"token"}` |
 | PATCH | `/account/password` | any logged-in user | `{"old_password", "new_password"}` |
+| GET | `/me` | any logged-in user | your own profile and role |
+| GET | `/admin/users` | admin | every account and its role |
 | PATCH | `/admin/users/role` | admin | `{"email", "role"}`; you can't change your own role |
 
 ### Students and parents
@@ -146,6 +148,8 @@ printed on their card. Money is sent as a string (`"150.00"`) so it never passes
 | POST | `/new/book` | admin, principal | inventory |
 | POST | `/parents/links` | admin, principal | `{"parent_email", "student_id"}`: staff confirm who a parent is |
 | GET | `/me/children` | parent | the students linked to you |
+| GET | `/students` | staff (everyone but parents) | every student |
+| GET | `/students/{student_id}/bills` | parent (own children), admin, principal, bursar | every bill with `paid` and `remaining` |
 
 ### Bills
 
@@ -154,6 +158,7 @@ given semester is a **bill** that every student owes.
 
 | Method | Path | Who | Body / notes |
 |---|---|---|---|
+| GET | `/utilities` | admin, principal, bursar | every bill of the active utilities, with its `bill_id` |
 | POST | `/utilities` | admin, principal, bursar | `{"util_name": "Tuition"}` |
 | POST | `/utilities/{util_id}/prices` | admin, principal, bursar | `{"sem": "2026-T1", "amount": "500.00"}` → returns the `bill_id` |
 
@@ -193,3 +198,7 @@ Unit tests currently cover the helpers in `pkg/`. Handler tests are planned.
 ## Status
 
 Work in progress: the backend works end to end with Paystack test keys, and a frontend is next.
+
+<div align="center">
+  <sub>Proudly Ghanaian 🇬🇭💖.</sub>
+</div>

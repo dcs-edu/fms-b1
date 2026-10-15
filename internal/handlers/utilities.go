@@ -18,6 +18,29 @@ import (
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
+// GET /utilities
+// Every bill of the active utilities: one row per utility per semester, with its bill_id.
+func (srv *Pool) ListUtilityHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !slices.Contains(paymentStaff, claims.Role) {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	bills, err := srv.Repo.GetUtilities(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetUtilities error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, bills)
+}
+
 // POST /utilities   {"util_name": "Tuition"}
 func (srv *Pool) CreateUtilityHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)

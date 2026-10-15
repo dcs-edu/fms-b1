@@ -13,8 +13,48 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/Jxt-Eli/template/internal/models"
-	"github.com/Jxt-Eli/template/pkg"
 )
+
+func (r *Repository) GetUtilities (ctx context.Context) ([]models.Bill, error) {
+	query :=
+	`
+		SELECT up.bill_id, u.util_name, up.sem, up.amount
+		FROM utilities u
+		JOIN utility_prices up ON u.id = up.util_id
+		WHERE u.is_active = true
+		ORDER BY up.sem, u.util_name
+	`
+	var bills []models.Bill
+	if err := r.DB.SelectContext(ctx, &bills, query); err != nil {
+		return nil, fmt.Errorf("list utilities: %w", mapPgError(err))
+	}
+	return bills, nil
+}
+
+// StudentBills is every bill with what this student has paid on it and what is left.
+// It is remainingOnBill for all bills at once, so the two must agree: only completed payments count.
+func (r *Repository) StudentBills(ctx context.Context, admissionNo uuid.UUID) ([]models.StudentBill, error) {
+	// The payment filters sit in the LEFT JOIN's ON, not in a WHERE. In a WHERE, a bill with no
+	// payments yet (p.status is NULL) would be filtered out, and the bills nobody has paid would vanish.
+	// No is_active filter: switching a utility off must not hide money a student still owes on it.
+	query :=
+	`
+		SELECT up.bill_id, u.util_name, up.sem, up.amount,
+		       COALESCE(SUM(p.amount), 0)             AS paid,
+		       up.amount - COALESCE(SUM(p.amount), 0) AS remaining
+		FROM utility_prices up
+		JOIN utilities u ON u.id = up.util_id
+		LEFT JOIN payments p
+		       ON p.bill_id = up.bill_id AND p.admission_no = $1 AND p.status = 'completed'
+		GROUP BY up.bill_id, u.util_name
+		ORDER BY up.sem, u.util_name
+	`
+	var bills []models.StudentBill
+	if err := r.DB.SelectContext(ctx, &bills, query, admissionNo); err != nil {
+		return nil, fmt.Errorf("student bills: %w", mapPgError(err))
+	}
+	return bills, nil
+}
 
 func (r *Repository) InsertUtility(ctx context.Context, u models.Utility) (*models.Utility, error) {
 	query :=
@@ -226,23 +266,6 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 		return nil, fmt.Errorf("list payments: %w", mapPgError(err))
 	}
 	return payments, nil
-}
-
-// GetStd finds a student by the two columns their student ID is built from.
-// It also loads admission_no, so callers can go on to query the tables that reference it.
-func (r *Repository) GetStd(ctx context.Context, gradYear, seqNum int16) (*models.Std, error) {
-	var std models.Std
-	query :=
-	`
-		SELECT admission_no, fname, lname, grade
-		FROM students
-		WHERE grad_year = $1 AND seq_num = $2
-	`
-	if err := r.DB.GetContext(ctx, &std, query, gradYear, seqNum); err != nil {
-		return nil, fmt.Errorf("get student: %w", mapPgError(err))
-	}
-	std.StudentID = pkg.FormatStudentID(gradYear, seqNum)
-	return &std, nil
 }
 
 // GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student.
