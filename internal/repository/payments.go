@@ -22,7 +22,7 @@ func (r *Repository) GetUtilities (ctx context.Context) ([]models.Bill, error) {
 		FROM utilities u
 		JOIN utility_prices up ON u.id = up.util_id
 		WHERE u.is_active = true
-		ORDER BY up.sem, u.util_name
+		ORDER BY up.sem, u.util_name, u.util_id
 	`
 	var bills []models.Bill
 	if err := r.DB.SelectContext(ctx, &bills, query); err != nil {

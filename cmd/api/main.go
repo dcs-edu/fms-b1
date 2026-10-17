@@ -103,7 +103,7 @@ func main() {
 	studentsRouter.Use(jwtCfg.JwtMiddleware)
 
 	studentsRouter.HandleFunc("", p.ListStudentsHandler).Methods("GET")
-	studentsRouter.HandleFunc("/profile", p.StudentsHandler).Methods("GET")
+	studentsRouter.HandleFunc("/profile", p.FullProfileHandler).Methods("GET")
 	studentsRouter.HandleFunc("/{student_id}/bills", p.StudentBillsHandler).Methods("GET")
 	studentsRouter.HandleFunc("/owing", p.StudentDebtHandler).Methods("GET")
 

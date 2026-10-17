@@ -8,6 +8,17 @@ import (
 	"github.com/Jxt-Eli/template/pkg"
 )
 
+func (r *Repository) FullStudentProfile(ctx context.Context, studentProfile *models.Student) (*models.Student, error){
+	query :=
+	`
+		SELECT * from students
+		WHERE grad_year = $1 AND seq_num = $2
+	`
+	if err := r.DB.SelectContext(ctx, &studentProfile, query, studentProfile.GradYear, studentProfile.SeqNum); err != nil {
+		return nil, fmt.Errorf("FullStudentProfile error: %w", mapPgError(err))
+	}
+	return studentProfile, nil
+}
 // GetStd finds a student by the two columns their student ID is built from.
 // It also loads admission_no, so callers can go on to query the tables that reference it.
 func (r *Repository) GetStd(ctx context.Context, gradYear, seqNum int16) (*models.Std, error) {
