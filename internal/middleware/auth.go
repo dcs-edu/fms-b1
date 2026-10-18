@@ -16,17 +16,48 @@ type ctxKey string
 const UserContextKey  ctxKey = "claims"
 
 
+// statusRecorder remembers the status code a handler sent, so the logger can print it afterwards.
+// It embeds http.ResponseWriter, so every method it doesn't define (Header, Write) goes straight to the
+// real writer; only WriteHeader is intercepted. A handler that never calls WriteHeader sent a 200.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rec *statusRecorder) WriteHeader(code int) {
+	rec.status = code
+	rec.ResponseWriter.WriteHeader(code)
+}
+
 func LoggingMiddleware(f http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
-		// fmt.Println()
 		start := time.Now()
-		f.ServeHTTP(w, r)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		f.ServeHTTP(rec, r)
 		end := time.Since(start)
 		slog.Info("http request handled",
 			"method", r.Method,
 			"path", r.URL.Path,
+			"status", rec.status,
 			"duration", end.String(),
+			// behind nginx, RemoteAddr is always nginx itself; nginx puts the client's address in X-Real-IP
+			// (proxy_set_header X-Real-IP $remote_addr;). Anyone can send that header when there's no nginx
+			// in front, so it's only logged, never trusted for decisions.
+			"remote", r.RemoteAddr,
+			"real_ip", r.Header.Get("X-Real-IP"),
 			)
+	})
+}
+
+// TODO: Remove and implement with nginx
+
+// MaxBodyMiddleware caps every request body at 1 MB. Without it, a stranger could send /auth/register a
+// 5 GB body and the JSON decoder would keep reading. Past the limit, reads fail and the handler's
+// decode error answers 400. nginx's client_max_body_size does the same job one step earlier.
+func MaxBodyMiddleware(f http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		f.ServeHTTP(w, r)
 	})
 }
 
@@ -54,7 +85,10 @@ func (cfg Config) JwtMiddleware(f http.Handler) http.Handler {
 		tokenString := parts[1]   // "eyJhbGc..."
 		claims := &auth.CustomClaims{}
 		// anonymous function boilerplate ceremony for a fuckton of usecases I'll never hit :(
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) { return jwtSecret, nil })
+		// WithValidMethods pins the algorithm to the one GenerateToken signs with. Without it the token's own
+		// header picks the algorithm, and "let the attacker choose how to check their token" is a classic JWT hole.
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) { return jwtSecret, nil },
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 		if err != nil || !token.Valid{
 			slog.Error("Invalid or failed jwt", "error", err)
 			http.Error(w, "invalid or expired token", http.StatusUnauthorized)

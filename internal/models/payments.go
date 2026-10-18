@@ -44,15 +44,18 @@ const (
 )
 
 type Payment struct {
-	TxnID        uuid.UUID         `json:"txn_id"                db:"txn_id"`
-	BillID       int64             `json:"bill_id"               db:"bill_id"`
-	AdmissionNo  uuid.UUID         `json:"admission_no"          db:"admission_no"`
-	Amount       decimal.Decimal   `json:"amount"                db:"amount"`
-	Status       string            `json:"status"                db:"status"`
-	Reference    *string           `json:"reference"             db:"reference"`			// Paystack reference; nil for cash
-	CreatedAt    time.Time         `json:"created_at"            db:"created_at"`
-	PaidAt       *time.Time        `json:"paid_at"               db:"paid_at"`			// nil until completed
+	TxnID        uuid.UUID         `json:"txn_id"                 db:"txn_id"`
+	BillID       int64             `json:"bill_id"                db:"bill_id"`
+	// StudentID    string            `json:"student_id"             db:"-"`
+	AdmissionNo  uuid.UUID         `json:"-"           db:"admission_no"`
+	Amount       decimal.Decimal   `json:"amount"                 db:"amount"`
+	Status       string            `json:"status"                 db:"status"`
+	Reference    *string           `json:"reference"              db:"reference"`			// Paystack reference; nil for cash
+	CreatedAt    time.Time         `json:"created_at"             db:"created_at"`
+	PaidAt       *time.Time        `json:"paid_at"                db:"paid_at"`			// nil until completed
 	InitiatedBy  *uuid.UUID        `json:"initiated_by,omitempty" db:"initiated_by"`	// user who started it (staff for cash, parent/bursar online); omitted when nil
+	Seq_num      int16             `json:"seq_num"                db:"seq_num"`
+	Grad_year    int16             `json:"grad_year"              db:"grad_year"`
 }
 
 // NewPayment is the request body for both a staff-recorded payment and a parent starting an online one.
@@ -67,4 +70,20 @@ type NewPayment struct {
 type StudentPayments struct {
 	Student      Std               `json:"student"`
 	Payments     []Payment         `json:"payments"`
+}
+
+// StudentDebt is one bill a student hasn't finished paying: who they are, which bill, and how much is left.
+type StudentDebt struct {
+	StudentID    string            `json:"student_id"            db:"-"`			// derived from grad_year + seq_num, like Std
+	AdmissionNo  uuid.UUID         `json:"-"                     db:"admission_no"`	// never sent to clients, like Std
+	FName        string            `json:"fname"                 db:"fname"`
+	MName        *string           `json:"mname,omitempty"       db:"mname"`			// nullable column, so a pointer
+	LName        string            `json:"lname"                 db:"lname"`
+	Grade        string            `json:"grade"                 db:"grade"`
+	BillID       int64             `json:"bill_id"               db:"bill_id"`
+	UtilName     string            `json:"util_name"             db:"util_name"`
+	Sem          string            `json:"sem"                   db:"sem"`
+	Price        decimal.Decimal   `json:"price"                 db:"price"`
+	Paid         decimal.Decimal   `json:"paid"                  db:"paid"`			// completed payments only
+	Owing        decimal.Decimal   `json:"owing"                 db:"owing"`
 }

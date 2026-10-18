@@ -1,0 +1,9 @@
+*.env
+*test.json
+test*.json
+testaccounts.json
+teststudent.json
+notes.md
+todo.md
+.claude/
+bin/

@@ -23,7 +23,7 @@ func (srv *Pool) ChangeAuthZHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if claims.Role != auth.RoleAdmin {
+	if claims.Role != auth.RoleAdmin && claims.Role != auth.RolePrincipal{
 		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
 		return
 	}
@@ -65,7 +65,7 @@ func (srv *Pool) ShowUserRolesHandler (w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if claims.Role != auth.RoleAdmin {
+	if claims.Role != auth.RoleAdmin && claims.Role != auth.RolePrincipal {
 		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
 		return
 	}
