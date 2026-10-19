@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -134,8 +136,7 @@ func (srv *Pool) OnlinePaymentHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /payments/online/{reference}
-// Asks Paystack how a payment went. The parent's page calls this after Paystack sends them back.
-// It is also the only way a payment becomes "failed": Paystack sends no webhook for failed charges.
+// Asks Paystack how a payment went. The app calls this once the payer is back from checkout.
 func (srv *Pool) VerifyOnlinePaymentHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
 	if !ok {
@@ -176,42 +177,14 @@ func (srv *Pool) VerifyOnlinePaymentHandler(w http.ResponseWriter, r *http.Reque
 	// Completed is final, so there is nothing to ask Paystack. Failed is asked again,
 	// because a declined card can be retried on the same Paystack page.
 	if payment.Status != models.PaymentCompleted {
-		res, err := srv.Paystack.VerifyTransaction(ctx, reference)
-		if err != nil {
-			slog.ErrorContext(ctx, "VerifyTransaction error", "error", err, "reference", reference)
+		payment, err = srv.refreshFromPaystack(ctx, payment)
+		if errors.Is(err, errPaystackUnreachable) {
+			slog.ErrorContext(ctx, "refreshFromPaystack error", "error", err, "reference", reference)
 			http.Error(w, "502 could not reach the payment provider, try again", http.StatusBadGateway)
 			return
 		}
-
-		// Paystack's statuses: success, failed, abandoned (page opened, never paid), and in-between
-		// ones like ongoing or pending. "abandoned" is left as pending: the parent can still go back
-		// and pay, and calling it failed would just be wrong for a while.
-		switch res.Data.Status {
-		case "success":
-			// Never trust "success" alone: check Paystack took the amount this row is for.
-			if res.Data.Amount != paystack.ToCoin(payment.Amount) {
-				slog.ErrorContext(ctx, "paystack amount does not match payment", "reference", reference,
-					"expected", paystack.ToCoin(payment.Amount), "got", res.Data.Amount)
-				http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-			if _, err := srv.Repo.CompletePayment(ctx, reference); err != nil {
-				slog.ErrorContext(ctx, "CompletePayment error", "error", err)
-				http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-		case "failed":
-			if _, err := srv.Repo.FailPayment(ctx, reference); err != nil {
-				slog.ErrorContext(ctx, "FailPayment error", "error", err)
-				http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		// read it back so the reply shows the new status and paid_at
-		payment, err = srv.Repo.GetPaymentByReference(ctx, reference)
 		if err != nil {
-			slog.ErrorContext(ctx, "GetPaymentByReference error", "error", err)
+			slog.ErrorContext(ctx, "refreshFromPaystack error", "error", err, "reference", reference)
 			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -221,6 +194,106 @@ func (srv *Pool) VerifyOnlinePaymentHandler(w http.ResponseWriter, r *http.Reque
 		payment.InitiatedBy = nil
 	}
 	writeJSON(w, r, http.StatusOK, payment)
+}
+
+// errPaystackUnreachable lets callers of refreshFromPaystack tell "Paystack is down" (502, try again)
+// apart from "our side broke" (500), without refreshFromPaystack knowing anything about HTTP.
+var errPaystackUnreachable = errors.New("could not reach paystack")
+
+// refreshFromPaystack asks Paystack how a payment went, saves the answer, and returns the payment as it
+// now stands. The verify endpoint and the callback page both use it, so they can never disagree on
+// what counts as paid. It is the only way a payment becomes "failed": Paystack sends no webhook for that.
+func (srv *Pool) refreshFromPaystack(ctx context.Context, payment *models.Payment) (*models.Payment, error) {
+	reference := *payment.Reference
+	res, err := srv.Paystack.VerifyTransaction(ctx, reference)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errPaystackUnreachable, err)
+	}
+
+	// Paystack's statuses: success, failed, abandoned (page opened, never paid), and in-between
+	// ones like ongoing or pending. "abandoned" is left as pending: the parent can still go back
+	// and pay, and calling it failed would just be wrong for a while.
+	switch res.Data.Status {
+	case "success":
+		// Never trust "success" alone: check Paystack took the amount this row is for.
+		if res.Data.Amount != paystack.ToCoin(payment.Amount) || res.Data.Currency != "GHS" {
+			return nil, fmt.Errorf("paystack amount does not match payment: expected %d GHS, got %d %s",
+				paystack.ToCoin(payment.Amount), res.Data.Amount, res.Data.Currency)
+		}
+		if _, err := srv.Repo.CompletePayment(ctx, reference); err != nil {
+			return nil, err
+		}
+	case "failed":
+		if _, err := srv.Repo.FailPayment(ctx, reference); err != nil {
+			return nil, err
+		}
+	}
+
+	// read it back so the caller sees the new status and paid_at
+	return srv.Repo.GetPaymentByReference(ctx, reference)
+}
+
+// GET /payments/callback?reference=...   (Paystack also adds trxref=..., the same value)
+// Where Paystack sends the payer's browser once checkout is done. It's public, because a browser
+// (or the mobile app's in-app browser) carries no JWT. That's safe: it can only move a payment to what
+// Paystack itself reports, and the page shows nothing but the outcome.
+//
+// The mobile app normally never shows this page: it opens authorization_url in a WebView, watches for
+// navigation to this URL, closes the WebView, and asks GET /payments/online/{reference} with its JWT.
+// This handler is the safety net: the payment gets updated even if the app is killed right after paying
+// and the webhook never arrives.
+func (srv *Pool) PaystackCallbackHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	reference := r.URL.Query().Get("reference")
+
+	// every reference this app creates is a UUID, so anything else isn't ours. Checking it here
+	// means junk never reaches the database or Paystack, and is safe to print in the page below.
+	if _, err := uuid.Parse(reference); err != nil {
+		http.Error(w, "400 invalid payment reference", http.StatusBadRequest)
+		return
+	}
+
+	payment, err := srv.Repo.GetPaymentByReference(ctx, reference)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "404 payment not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "GetPaymentByReference error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if payment.Status != models.PaymentCompleted {
+		payment, err = srv.refreshFromPaystack(ctx, payment)
+		if err != nil {
+			// The payer already finished on Paystack's side, so don't scare them with an error page:
+			// the webhook or the app's own verify call will still settle it.
+			slog.ErrorContext(ctx, "refreshFromPaystack error", "error", err, "reference", reference)
+			writeCallbackPage(w, "We're confirming your payment", "You can close this page and check the app.")
+			return
+		}
+	}
+
+	switch payment.Status {
+	case models.PaymentCompleted:
+		writeCallbackPage(w, "Payment received", "Thank you. You can close this page and return to the app.")
+	case models.PaymentFailed:
+		writeCallbackPage(w, "Payment failed", "No money was taken. Return to the app to try again.")
+	default:
+		writeCallbackPage(w, "Payment not finished yet", "Return to the app to check its status or try again.")
+	}
+}
+
+// writeCallbackPage writes a bare HTML page. Only fixed strings from PaystackCallbackHandler go in,
+// never anything from the request, so nothing here needs HTML escaping.
+func writeCallbackPage(w http.ResponseWriter, title, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>%s</title></head>
+<body style="font-family:sans-serif;text-align:center;padding:3rem 1rem"><h1>%s</h1><p>%s</p></body></html>`,
+		title, title, message)
 }
 
 // POST /webhooks/paystack

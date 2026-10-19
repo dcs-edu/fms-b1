@@ -1,2 +1,4 @@
+-- INFO: this file isn't really necessary (can skip and leave empty)
+--
 -- UNSET admin role for dev account
-UPDATE users SET role = 'teacher', WHERE email = 'hajileayinomba@gmail.com'
+-- UPDATE users SET role = '<role>', WHERE email = 'admin.account@gmail.com'

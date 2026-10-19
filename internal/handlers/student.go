@@ -60,6 +60,32 @@ func (srv *Pool) StudentsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (srv *Pool) FullProfileHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !slices.Contains(paymentStaff, claims.Role) {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	var studentProfile models.Student
+	studentProfile.SeqNum, studentProfile.GradYear, _ = pkg.ParseStudentID(studentProfile.StudentID)
+	profile, err := srv.Repo.FullStudentProfile(ctx, &studentProfile)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w,"student profile not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("FullProfileHandler error:", "error", err)
+		http.Error(w, "500 internal server error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, profile)
+}
 // GET /students
 // Every student, for staff. Parents use GET /me/children instead, which only lists their own.
 func (srv *Pool) ListStudentsHandler(w http.ResponseWriter, r *http.Request) {
@@ -140,4 +166,27 @@ func (srv *Pool) StudentBillsHandler(w http.ResponseWriter, r *http.Request) {
 		Student models.Std           `json:"student"`
 		Bills   []models.StudentBill `json:"bills"`
 	}{*std, bills})
+}
+
+// GET /students/owing
+// Every student with money left on a bill, one row per unfinished bill.
+func (srv *Pool) StudentDebtHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if claims.Role != auth.RoleAdmin && claims.Role != auth.RolePrincipal {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	debts, err := srv.Repo.ShowStudentDebts(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "ShowStudentDebts error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, debts)
 }

@@ -10,16 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 
-	"github.com/Jxt-Eli/template/internal/auth"
 	"github.com/Jxt-Eli/template/internal/models"
 )
-
-type UserStore interface {
-	Create (ctx context.Context, user *models.User) (*models.User, error)
-	GetByEmail (ctx context.Context, email string) (*models.User, error)
-	UpdateRole (ctx context.Context, user *models.Role, role auth.Role) ( *models.Role, error )
-	InsertStudent(ctx context.Context, s models.Student) (*models.Student, error)
-}
 
 type Repository struct {
 	DB *sqlx.DB

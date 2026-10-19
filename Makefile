@@ -1,9 +1,9 @@
 -include .env
 SCHEMA=./migrations/
-.PHONY: run migrate-up migrate-down
+.PHONY: build up down run migrate-up migrate-down dbversion
 
-build: ./cmd/api/build.go
-	@go build -o bin/build ./cmd/api/build.go
+build:
+	@go build -o bin/api ./cmd/api
 
 up:
 	@docker-compose up -d

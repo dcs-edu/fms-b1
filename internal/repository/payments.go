@@ -22,7 +22,7 @@ func (r *Repository) GetUtilities (ctx context.Context) ([]models.Bill, error) {
 		FROM utilities u
 		JOIN utility_prices up ON u.id = up.util_id
 		WHERE u.is_active = true
-		ORDER BY up.sem, u.util_name
+		ORDER BY up.sem, u.util_name, u.util_id
 	`
 	var bills []models.Bill
 	if err := r.DB.SelectContext(ctx, &bills, query); err != nil {
@@ -114,7 +114,9 @@ func remainingOnBill(ctx context.Context, q sqlx.QueryerContext, admissionNo uui
 }
 
 // RemainingOnBill is the check run before sending a parent to Paystack.
-// It can't stop two attempts racing each other, so the webhook checks again when money arrives.
+// It can't stop two attempts racing each other: two pending payments can both pass it, and if both are
+// paid, the webhook completes both (money that already arrived can't be refused). The bill then shows a
+// negative remaining, and staff refund the difference.
 func (r *Repository) RemainingOnBill(ctx context.Context, admissionNo uuid.UUID, billID int64) (decimal.Decimal, error) {
 	return remainingOnBill(ctx, r.DB, admissionNo, billID)
 }
@@ -255,20 +257,21 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
-		FROM payments
-		WHERE created_at >= $1 AND created_at < $2
-		ORDER BY created_at
+		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year
+		FROM payments p
+		JOIN students s on p.admission_no = s.admission_no
+		WHERE p.created_at >= $1 AND p.created_at < $2
+		ORDER BY p.created_at
 	`
 	// non-nil so an empty range encodes as [] in JSON, not null
 	payments := []models.Payment{}
 	if err := r.DB.SelectContext(ctx, &payments, query, from, to); err != nil {
-		return nil, fmt.Errorf("list payments: %w", mapPgError(err))
+		return nil, fmt.Errorf("list payments error: %w", mapPgError(err))
 	}
 	return payments, nil
 }
 
-// GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student.
+// GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student. (not exactly the same method tho)
 func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to time.Time, admissionNo uuid.UUID) ([]models.Payment, error) {
 	if !to.After(from) {
 		return nil, ErrInvalidTimeRange
@@ -276,12 +279,12 @@ func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to 
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
-		FROM payments
-		WHERE admission_no = $1 AND created_at >= $2 AND created_at < $3
-		ORDER BY created_at
+		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year
+		FROM payments p
+		JOIN students s ON s.admission_no = p.admission_no
+		WHERE p.admission_no = $1 AND p.created_at >= $2 AND created_at < $3
+		ORDER BY p.created_at
 	`
-	// non-nil so an empty range encodes as [] in JSON, not null
 	individualPayments := []models.Payment{}
 	if err := r.DB.SelectContext(ctx, &individualPayments, query, admissionNo, from, to); err != nil {
 		return nil, fmt.Errorf("list student payments: %w", mapPgError(err))

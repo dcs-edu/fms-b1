@@ -72,6 +72,13 @@ DB_URL=postgres://school:change-me@localhost:5432/school?sslmode=disable
 PORT=":8080"
 JWTSECRET=a-long-random-string
 PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxx
+PAYSTACK_CALLBACK_URL=https://api.example.com/payments/callback
+# optional; placeholders shown. Leave SMTP_HOST empty in development to print emails to the log instead
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=placeholder-user
+SMTP_PASS=placeholder-password
+SMTP_FROM=no-reply@example.com
 ```
 
 | Variable | What it is |
@@ -81,8 +88,10 @@ PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxx
 | `PORT` | Address to listen on, with the colon (`":8080"`) |
 | `JWTSECRET` | Secret for signing login tokens. Make it long and random |
 | `PAYSTACK_SECRET_KEY` | From the Paystack dashboard, **Settings → API Keys & Webhooks** |
+| `PAYSTACK_CALLBACK_URL` | Optional. Public address of `GET /payments/callback`, where Paystack sends the payer after checkout. Empty = the callback URL set in the Paystack dashboard |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Any SMTP provider, for forgot-password emails. The port must support STARTTLS (usually `587`). Empty `SMTP_HOST` = **dev mode**: emails are printed to the server log instead of sent. Never run production like that |
 
-The server refuses to start if `DB_URL`, `PORT` or `PAYSTACK_SECRET_KEY` is missing.
+The server refuses to start if `DB_URL`, `PORT`, `JWTSECRET` or `PAYSTACK_SECRET_KEY` is missing.
 
 ### 2. Run
 
@@ -92,8 +101,12 @@ make migrate-up    # apply all migrations
 make run           # start the API on $PORT
 ```
 
-Other targets: `make down` (stop Postgres), `make migrate-down` (roll back one migration),
-`make dbversion` (show the current migration).
+Other targets: `make build` (binary in `bin/api`), `make down` (stop Postgres),
+`make migrate-down` (roll back one migration), `make dbversion` (show the current migration).
+
+The server shuts down gracefully on Ctrl+C or `docker stop` (SIGTERM): it stops taking new requests
+and gives running ones up to 8 seconds to finish. `GET /healthz` answers 200 while the database is
+reachable and 503 when it isn't, for nginx or Docker to check.
 
 ### 3. Create the first admin
 
@@ -123,7 +136,7 @@ new address each time it starts, so update the dashboard whenever you restart it
 
 ## API
 
-All endpoints except `/auth/*` and `/webhooks/paystack` need an `Authorization: Bearer <token>` header,
+All endpoints except `/auth/*`, `/healthz`, `/webhooks/paystack` and `/payments/callback` need an `Authorization: Bearer <token>` header,
 using the token from `/auth/login`. Students are identified by their short ID (e.g. `33-0002`), the one
 printed on their card. Money is sent as a string (`"150.00"`) so it never passes through a float.
 
@@ -133,8 +146,10 @@ printed on their card. Money is sent as a string (`"150.00"`) so it never passes
 
 | Method | Path | Who | Body / notes |
 |---|---|---|---|
-| POST | `/auth/register` | anyone | `{"name", "email", "phone", "password"}`; new accounts are parents |
-| POST | `/auth/login` | anyone | `{"email", "password"}` → `{"token"}` |
+| POST | `/auth/register` | anyone | `{"name", "email", "phone", "password"}`; new accounts are parents. Password 8–72 bytes; 409 if the email is taken |
+| POST | `/auth/login` | anyone | `{"email", "password"}` → `{"token"}`; 401 on a wrong email or password |
+| POST | `/auth/forgot-password` | anyone | `{"email"}` → 202 either way; emails an 8-digit code if the account exists |
+| POST | `/auth/reset-password` | anyone | `{"email", "code", "new_password"}` → 204 |
 | PATCH | `/account/password` | any logged-in user | `{"old_password", "new_password"}` |
 | GET | `/me` | any logged-in user | your own profile and role |
 | GET | `/admin/users` | admin | every account and its role |
@@ -150,6 +165,7 @@ printed on their card. Money is sent as a string (`"150.00"`) so it never passes
 | GET | `/me/children` | parent | the students linked to you |
 | GET | `/students` | staff (everyone but parents) | every student |
 | GET | `/students/{student_id}/bills` | parent (own children), admin, principal, bursar | every bill with `paid` and `remaining` |
+| GET | `/students/owing` | admin, principal | every unfinished bill of every student, with `paid` and `owing` |
 
 ### Bills
 
@@ -172,6 +188,7 @@ given semester is a **bill** that every student owes.
 | GET | `/payments?range=...` | admin, principal, bursar | Every payment attempt in a range |
 | GET | `/payments/students/{student_id}?range=...` | parent (own children), staff | One student's payments |
 | POST | `/webhooks/paystack` | Paystack | Checked with the `x-paystack-signature` header |
+| GET | `/payments/callback?reference=...` | the payer's browser | Where Paystack redirects after checkout; checks with Paystack and shows a small status page |
 
 `range` is one of `today`, `this_week`, `this_month`, `three_months_to_date`. Parents never see
 `initiated_by` (which staff member handled a payment is internal).
@@ -181,11 +198,24 @@ given semester is a **bill** that every student owes.
 1. The parent calls `POST /payments/online`. The server checks the parent is linked to the student and
    that the amount isn't more than what's left on the bill, saves a `pending` payment with a fresh
    reference, and asks Paystack for a checkout page.
-2. The parent pays on that page.
+2. The app opens that page in a WebView and the parent pays. Paystack then redirects to
+   `/payments/callback?reference=...`. The app spots that URL, closes the WebView, and calls step 4
+   itself. The callback also updates the payment on its own, in case the app is closed right after paying.
 3. Paystack calls `POST /webhooks/paystack`. The server checks the signature and the amount, then marks
    the payment `completed`. A repeated webhook changes nothing.
-4. If the webhook never arrives, `GET /payments/online/{reference}` asks Paystack directly and updates
-   the payment.
+4. `GET /payments/online/{reference}` returns the status, asking Paystack directly if the webhook
+   hasn't arrived yet.
+
+### Forgot password
+
+1. The app sends `POST /auth/forgot-password {"email"}`. The reply is the same whether or not the
+   account exists, so it can't be used to find out who has one.
+2. If it exists, the server emails an 8-digit code (stored only as a hash). It expires after 15 minutes
+   or 5 wrong guesses. Asking again replaces it, but at most once a minute.
+3. The app shows a "code + new password" screen and sends `POST /auth/reset-password`. The code works
+   once.
+
+Tokens issued before the reset stay valid until they expire (24 hours): there is no token revocation yet.
 
 ## Tests
 
