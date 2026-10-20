@@ -73,7 +73,7 @@ func (srv *Pool) FullProfileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var studentProfile models.Student
-	studentProfile.SeqNum, studentProfile.GradYear, _ = pkg.ParseStudentID(studentProfile.StudentID)
+	studentProfile.GradYear, studentProfile.SeqNum, _ = pkg.ParseStudentID(mux.Vars(r)["student_id"])
 	profile, err := srv.Repo.FullStudentProfile(ctx, &studentProfile)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w,"student profile not found", http.StatusNotFound)
