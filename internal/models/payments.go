@@ -23,6 +23,7 @@ type UtilityPrice struct {
 
 // Bill is a utility price with the utility's name joined in: what a person reads when picking a bill.
 type Bill struct {
+	Util_id      int64               `json:"util_id"     db:"util_id"`
 	BillID       int64             `json:"bill_id"     db:"bill_id"`
 	UtilName     string            `json:"util_name"   db:"util_name"`
 	Sem          string            `json:"sem"         db:"sem"`
@@ -44,9 +45,11 @@ const (
 )
 
 type Payment struct {
+	Fname        string            `json:"fname"        db:"fname"`				// details of student who payment was made for.
+	Mname        *string            `json:"mname"        db:"mname"`
+	Lname        string            `json:"lname"        db:"lname"`
 	TxnID        uuid.UUID         `json:"txn_id"                 db:"txn_id"`
 	BillID       int64             `json:"bill_id"                db:"bill_id"`
-	// StudentID    string            `json:"student_id"             db:"-"`
 	AdmissionNo  uuid.UUID         `json:"-"           db:"admission_no"`
 	Amount       decimal.Decimal   `json:"amount"                 db:"amount"`
 	Status       string            `json:"status"                 db:"status"`

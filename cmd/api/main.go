@@ -98,12 +98,13 @@ func main() {
 	utilitiesRouter.HandleFunc("/create", p.CreateUtilityHandler).Methods("POST")
 	utilitiesRouter.HandleFunc("/list", p.ListUtilityHandler).Methods("GET")
 	utilitiesRouter.HandleFunc("/{util_id}/prices", p.CreateUtilityPriceHandler).Methods("POST")
+	utilitiesRouter.HandleFunc("/remove/{id}", p.RemoveUtilityHandler).Methods("PATCH")
 
 	studentsRouter := r.PathPrefix("/students").Subrouter()
 	studentsRouter.Use(jwtCfg.JwtMiddleware)
 
 	studentsRouter.HandleFunc("", p.ListStudentsHandler).Methods("GET")
-	studentsRouter.HandleFunc("/profile", p.FullProfileHandler).Methods("GET")
+	studentsRouter.HandleFunc("/profile/{student_id}", p.FullProfileHandler).Methods("GET")
 	studentsRouter.HandleFunc("/{student_id}/bills", p.StudentBillsHandler).Methods("GET")
 	studentsRouter.HandleFunc("/owing", p.StudentDebtHandler).Methods("GET")
 

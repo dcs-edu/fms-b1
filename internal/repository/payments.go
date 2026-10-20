@@ -15,77 +15,6 @@ import (
 	"github.com/Jxt-Eli/template/internal/models"
 )
 
-func (r *Repository) GetUtilities (ctx context.Context) ([]models.Bill, error) {
-	query :=
-	`
-		SELECT up.bill_id, u.util_name, up.sem, up.amount
-		FROM utilities u
-		JOIN utility_prices up ON u.id = up.util_id
-		WHERE u.is_active = true
-		ORDER BY up.sem, u.util_name, u.util_id
-	`
-	var bills []models.Bill
-	if err := r.DB.SelectContext(ctx, &bills, query); err != nil {
-		return nil, fmt.Errorf("list utilities: %w", mapPgError(err))
-	}
-	return bills, nil
-}
-
-// StudentBills is every bill with what this student has paid on it and what is left.
-// It is remainingOnBill for all bills at once, so the two must agree: only completed payments count.
-func (r *Repository) StudentBills(ctx context.Context, admissionNo uuid.UUID) ([]models.StudentBill, error) {
-	// The payment filters sit in the LEFT JOIN's ON, not in a WHERE. In a WHERE, a bill with no
-	// payments yet (p.status is NULL) would be filtered out, and the bills nobody has paid would vanish.
-	// No is_active filter: switching a utility off must not hide money a student still owes on it.
-	query :=
-	`
-		SELECT up.bill_id, u.util_name, up.sem, up.amount,
-		       COALESCE(SUM(p.amount), 0)             AS paid,
-		       up.amount - COALESCE(SUM(p.amount), 0) AS remaining
-		FROM utility_prices up
-		JOIN utilities u ON u.id = up.util_id
-		LEFT JOIN payments p
-		       ON p.bill_id = up.bill_id AND p.admission_no = $1 AND p.status = 'completed'
-		GROUP BY up.bill_id, u.util_name
-		ORDER BY up.sem, u.util_name
-	`
-	var bills []models.StudentBill
-	if err := r.DB.SelectContext(ctx, &bills, query, admissionNo); err != nil {
-		return nil, fmt.Errorf("student bills: %w", mapPgError(err))
-	}
-	return bills, nil
-}
-
-func (r *Repository) InsertUtility(ctx context.Context, u models.Utility) (*models.Utility, error) {
-	query :=
-	`
-		INSERT INTO utilities (util_name, is_active)
-		VALUES ($1, $2)
-		RETURNING id
-	`
-	if err := r.DB.GetContext(ctx, &u.ID, query, u.UtilName, u.IsActive); err != nil {
-		return nil, fmt.Errorf("insert utility: %w", mapPgError(err))
-	}
-	return &u, nil
-}
-
-func (r *Repository) InsertUtilityPrice(ctx context.Context, p models.UtilityPrice) (*models.UtilityPrice, error) {
-	if !p.Amount.IsPositive() {
-		return nil, ErrNonPositiveAmount
-	}
-
-	query :=
-	`
-		INSERT INTO utility_prices (util_id, sem, amount)
-		VALUES ($1, $2, $3)
-		RETURNING bill_id
-	`
-	if err := r.DB.GetContext(ctx, &p.BillID, query, p.UtilID, p.Sem, p.Amount); err != nil {
-		return nil, fmt.Errorf("insert utility price: %w", mapPgError(err))
-	}
-	return &p, nil
-}
-
 // remainingOnBill is what a student still owes on a bill: its price minus their completed payments.
 //
 // It takes a sqlx.QueryerContext instead of using r.DB, so the same query can run inside a transaction
@@ -257,7 +186,7 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 
 	query :=
 	`
-		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year
+		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year, s.fname, s.mname, s.lname
 		FROM payments p
 		JOIN students s on p.admission_no = s.admission_no
 		WHERE p.created_at >= $1 AND p.created_at < $2
@@ -282,7 +211,7 @@ func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to 
 		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year
 		FROM payments p
 		JOIN students s ON s.admission_no = p.admission_no
-		WHERE p.admission_no = $1 AND p.created_at >= $2 AND created_at < $3
+		WHERE p.admission_no = $1 AND p.created_at >= $2 AND p.created_at < $3
 		ORDER BY p.created_at
 	`
 	individualPayments := []models.Payment{}
