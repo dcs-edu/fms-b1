@@ -5,8 +5,6 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PWD}
       POSTGRES_DB: ${DB_NAME}
-    ports: 
-      - "5432:5432"
     volumes:
       - volume_1:/var/lib/postgresql/data
     healthcheck:
@@ -14,14 +12,43 @@ services:
       interval: 2s
       timeout: 3s
       retries: 5
-
-  # migration:
-  #   build: .
+      start_period: 10s
+                                              
+  server:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: ${PORT}
+      DB_URL: postgres://${DB_USER}:${DB_PWD}@db:5432/${DB_NAME}?sslmode=disable
+      JWTSECRET: ${JWTSECRET}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
+                                              
+  # nginx:
+  #   image: nginx:stable
+  #   restart: unless-stopped
+  #   ports:
+  #     - 80:80
+  #     - 443:443
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
   #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   command: migrate -path ./migrations/ -database ${DB_URL} up
-
+  #     - server
 
 volumes:
   volume_1:
+
+# migration:
+#   build: .
+#   depends_on:
+#     db:
+#       condition: service_healthy
+#   command: migrate -path ./migrations/ -database ${DB_URL} up
+
+

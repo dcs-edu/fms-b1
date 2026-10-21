@@ -1,4 +1,4 @@
-# School Fees & Management Backend
+# School Payments & Finance Management Backend
 
 A Go backend for running a small school: staff and parent accounts, student records, fee bills, and
 payments. Parents (and the bursar) pay fees online through [Paystack](https://paystack.com); only the
