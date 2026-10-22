@@ -6,11 +6,11 @@ build:
 	@go build -o bin/api ./cmd/api
 
 up:
-	@docker-compose up -d
-	# @docker-compose exec db sh -c 'until pg_isready -U jxt-eli -d db; do sleep 1; done'
+	@docker compose up -d
+	# @docker compose exec db sh -c 'until pg_isready -U jxt-eli -d db; do sleep 1; done'
 
 down:
-	@docker-compose down
+	@docker compose down
 
 migrate-up:
 	@echo "Applying migration files"

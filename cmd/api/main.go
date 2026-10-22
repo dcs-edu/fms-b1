@@ -37,7 +37,6 @@ func main() {
 	ml := mailer.New(os.Getenv("SMTP_HOST"), os.Getenv("SMTP_PORT"), os.Getenv("SMTP_USER"),
 		os.Getenv("SMTP_PASS"), os.Getenv("SMTP_FROM"))
 
-	// an empty JWTSECRET would sign every token with an empty key, which anyone can forge
 	if dsn == "" || port == "" || secretKey == "" || len(jwtSecret) == 0 {
 		log.Fatal("error: missing port, dsn, paystack secret, or jwt secret")
 	}
@@ -59,7 +58,7 @@ func main() {
 	r.Use(middleware.LoggingMiddleware)
 	r.Use(middleware.MaxBodyMiddleware)
 
-	r.HandleFunc("/", handler).Methods("GET")
+	r.HandleFunc("/", HealthHandler).Methods("GET")
 	r.HandleFunc("/healthz", p.HealthHandler).Methods("GET")
 	r.HandleFunc("/auth/register", p.CreateUserHandler).Methods("POST")
 	r.HandleFunc("/auth/login", p.LoginHandler).Methods("POST")
@@ -71,6 +70,7 @@ func main() {
 	// public too: it's the payer's browser landing here after checkout, and a browser has no JWT
 	r.HandleFunc("/payments/callback", p.PaystackCallbackHandler).Methods("GET")
 
+	// INFO: remove [subRouter]
 	subRouter := r.PathPrefix("/new").Subrouter()
 	subRouter.Use(jwtCfg.JwtMiddleware)
 
@@ -144,10 +144,8 @@ func main() {
 
 	// ListenAndServe blocks until the server stops, so it runs in its own goroutine and main waits for the signal below.
 	go func() {
-		// HACK: server port logging (remove if necessary)
 		fmt.Printf("server running on port%v\n", port)
-		// ErrServerClosed is what ListenAndServe returns after Shutdown: expected, not a failure
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) { // ErrServerClosed : expected on shutdown, not a failure
 			log.Fatal(err)
 		}
 	}()
@@ -165,6 +163,6 @@ func main() {
 	// main returns here, so the deferred database.Close() finally runs (log.Fatal skipped it before)
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>If you're seeing this, the backend works and the database is running</h1><h3>How do I know? cause the backend won't start without a connection.</h3>")
 }
