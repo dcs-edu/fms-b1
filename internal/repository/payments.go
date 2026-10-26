@@ -13,38 +13,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/Jxt-Eli/template/internal/models"
-	"github.com/Jxt-Eli/template/pkg"
 )
-
-func (r *Repository) InsertUtility(ctx context.Context, u models.Utility) (*models.Utility, error) {
-	query :=
-	`
-		INSERT INTO utilities (util_name, is_active)
-		VALUES ($1, $2)
-		RETURNING id
-	`
-	if err := r.DB.GetContext(ctx, &u.ID, query, u.UtilName, u.IsActive); err != nil {
-		return nil, fmt.Errorf("insert utility: %w", mapPgError(err))
-	}
-	return &u, nil
-}
-
-func (r *Repository) InsertUtilityPrice(ctx context.Context, p models.UtilityPrice) (*models.UtilityPrice, error) {
-	if !p.Amount.IsPositive() {
-		return nil, ErrNonPositiveAmount
-	}
-
-	query :=
-	`
-		INSERT INTO utility_prices (util_id, sem, amount)
-		VALUES ($1, $2, $3)
-		RETURNING bill_id
-	`
-	if err := r.DB.GetContext(ctx, &p.BillID, query, p.UtilID, p.Sem, p.Amount); err != nil {
-		return nil, fmt.Errorf("insert utility price: %w", mapPgError(err))
-	}
-	return &p, nil
-}
 
 // remainingOnBill is what a student still owes on a bill: its price minus their completed payments.
 //
@@ -74,7 +43,9 @@ func remainingOnBill(ctx context.Context, q sqlx.QueryerContext, admissionNo uui
 }
 
 // RemainingOnBill is the check run before sending a parent to Paystack.
-// It can't stop two attempts racing each other, so the webhook checks again when money arrives.
+// It can't stop two attempts racing each other: two pending payments can both pass it, and if both are
+// paid, the webhook completes both (money that already arrived can't be refused). The bill then shows a
+// negative remaining, and staff refund the difference.
 func (r *Repository) RemainingOnBill(ctx context.Context, admissionNo uuid.UUID, billID int64) (decimal.Decimal, error) {
 	return remainingOnBill(ctx, r.DB, admissionNo, billID)
 }
@@ -215,37 +186,21 @@ func (r *Repository) ListPaymentsInRange(ctx context.Context, from, to time.Time
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
-		FROM payments
-		WHERE created_at >= $1 AND created_at < $2
-		ORDER BY created_at
+		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year, s.fname, s.mname, s.lname
+		FROM payments p
+		JOIN students s on p.admission_no = s.admission_no
+		WHERE p.created_at >= $1 AND p.created_at < $2
+		ORDER BY p.created_at
 	`
 	// non-nil so an empty range encodes as [] in JSON, not null
 	payments := []models.Payment{}
 	if err := r.DB.SelectContext(ctx, &payments, query, from, to); err != nil {
-		return nil, fmt.Errorf("list payments: %w", mapPgError(err))
+		return nil, fmt.Errorf("list payments error: %w", mapPgError(err))
 	}
 	return payments, nil
 }
 
-// GetStd finds a student by the two columns their student ID is built from.
-// It also loads admission_no, so callers can go on to query the tables that reference it.
-func (r *Repository) GetStd(ctx context.Context, gradYear, seqNum int16) (*models.Std, error) {
-	var std models.Std
-	query :=
-	`
-		SELECT admission_no, fname, lname, grade
-		FROM students
-		WHERE grad_year = $1 AND seq_num = $2
-	`
-	if err := r.DB.GetContext(ctx, &std, query, gradYear, seqNum); err != nil {
-		return nil, fmt.Errorf("get student: %w", mapPgError(err))
-	}
-	std.StudentID = pkg.FormatStudentID(gradYear, seqNum)
-	return &std, nil
-}
-
-// GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student.
+// GetIndividualPaymentsInRange is ListPaymentsInRange narrowed to one student. (not exactly the same method tho)
 func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to time.Time, admissionNo uuid.UUID) ([]models.Payment, error) {
 	if !to.After(from) {
 		return nil, ErrInvalidTimeRange
@@ -253,12 +208,12 @@ func (r *Repository) GetIndividualPaymentsInRange(ctx context.Context, from, to 
 
 	query :=
 	`
-		SELECT txn_id, bill_id, admission_no, amount, status, reference, created_at, paid_at, initiated_by
-		FROM payments
-		WHERE admission_no = $1 AND created_at >= $2 AND created_at < $3
-		ORDER BY created_at
+		SELECT p.txn_id, p.bill_id, p.admission_no, p.amount, p.status, p.reference, p.created_at, p.paid_at, p.initiated_by, s.seq_num, s.grad_year
+		FROM payments p
+		JOIN students s ON s.admission_no = p.admission_no
+		WHERE p.admission_no = $1 AND p.created_at >= $2 AND p.created_at < $3
+		ORDER BY p.created_at
 	`
-	// non-nil so an empty range encodes as [] in JSON, not null
 	individualPayments := []models.Payment{}
 	if err := r.DB.SelectContext(ctx, &individualPayments, query, admissionNo, from, to); err != nil {
 		return nil, fmt.Errorf("list student payments: %w", mapPgError(err))

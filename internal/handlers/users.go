@@ -8,10 +8,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Jxt-Eli/template/internal/auth"
+	"github.com/Jxt-Eli/template/internal/mailer"
 	"github.com/Jxt-Eli/template/internal/middleware"
 	"github.com/Jxt-Eli/template/internal/models"
 	"github.com/Jxt-Eli/template/internal/paystack"
@@ -21,15 +23,17 @@ import (
 type Pool struct {
 	Repo      *repository.Repository
 	Paystack  *paystack.Client
+	Mailer    *mailer.Mailer // sends forgot-password codes
 	JWTSecret []byte // signs login tokens; the same secret the JWT middleware checks them with
 }
 
-func NewPool(repo *repository.Repository, ps *paystack.Client, jwtSecret []byte) *Pool {
-	return &Pool{Repo: repo, Paystack: ps, JWTSecret: jwtSecret}
+func NewPool(repo *repository.Repository, ps *paystack.Client, m *mailer.Mailer, jwtSecret []byte) *Pool {
+	return &Pool{Repo: repo, Paystack: ps, Mailer: m, JWTSecret: jwtSecret}
 }
 
 // TEST: TEST HANDLER FUNCTIONS INDEPENDENTLY
 
+// POST /auth/register   {"name", "email", "phone", "password"}
 func (srv *Pool) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	var newUser models.User
 	var send models.UserResponse
@@ -40,28 +44,54 @@ func (srv *Pool) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "400 invalid request body", http.StatusBadRequest)
 		return
 	}
-	plainTextPassword := []byte(newUser.Password)
-	hashedPassword, err := bcrypt.GenerateFromPassword(plainTextPassword, bcrypt.DefaultCost)
+	newUser.Name = strings.TrimSpace(newUser.Name)
+	newUser.Email = strings.TrimSpace(newUser.Email)
+	newUser.Phone = strings.TrimSpace(newUser.Phone)
+	if newUser.Name == "" || newUser.Phone == "" {
+		http.Error(w, "400 name and phone are required", http.StatusBadRequest)
+		return
+	}
+	// not a full email check (only sending an email proves an address works), just a guard against typos
+	if !strings.Contains(newUser.Email, "@") {
+		http.Error(w, "400 a valid email is required", http.StatusBadRequest)
+		return
+	}
+	// same rule as ChangePasswordHandler and ResetPasswordHandler
+	if len(newUser.Password) < minPasswordLen {
+		http.Error(w, "400 password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
+	if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+		// bcrypt only reads 72 bytes; this was a 500 before, but it's the client's input that's wrong
+		http.Error(w, "400 password must be at most 72 bytes", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
-		slog.ErrorContext(ctx, "Password hash error:", "error", err)
+		slog.ErrorContext(ctx, "Password hash error", "error", err)
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	newUser.Password = string(hashedPassword)
-	createdUser, err := srv.Repo.Create(ctx, &newUser, &send)
-	if err != nil {
-		http.Error(w, "user already exists", http.StatusBadRequest)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(createdUser); err != nil {
-		slog.ErrorContext(ctx, "Json Encode error: ", "error", err)
+	createdUser, err := srv.Repo.Create(ctx, &newUser, &send)
+	// only a unique violation means "already exists". Every other error used to say that too,
+	// so a database outage looked like the user's fault.
+	if errors.Is(err, repository.ErrDuplicate) {
+		http.Error(w, "409 an account with that email already exists", http.StatusConflict)
 		return
 	}
+	if err != nil {
+		slog.ErrorContext(ctx, "Create user error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusCreated, createdUser)
 }
 
+// POST /auth/login   {"email", "password"}
+// A wrong email and a wrong password get the same answer, so the reply doesn't say which one exists.
 func (srv *Pool) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var cred models.Login
 	ctx := r.Context()
@@ -69,40 +99,36 @@ func (srv *Pool) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "400 invalid request body", http.StatusBadRequest)
 		return
 	}
-	password := []byte(cred.Password)
-	user, err := srv.Repo.GetByEmail(ctx, cred.Email)
-	if errors.Is(err, sql.ErrNoRows) || err != nil {
-		slog.ErrorContext(ctx, "db fetch error: %w", "error", err)
-		http.Error(w, "400 invalid email or password", http.StatusBadRequest)
+	user, err := srv.Repo.GetByEmail(ctx, strings.TrimSpace(cred.Email))
+	if errors.Is(err, sql.ErrNoRows) {
+		// 401, not 400: the request was well-formed, the credentials just aren't valid
+		http.Error(w, "401 invalid email or password", http.StatusUnauthorized)
 		return
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), password); err != nil {
-		slog.Error("password hash error", "error", err)
-		http.Error(w, "400 invalid email or password", http.StatusBadRequest)
+	if err != nil {
+		slog.ErrorContext(ctx, "GetByEmail error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(cred.Password)); err != nil {
+		http.Error(w, "401 invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	token, err := auth.GenerateToken(srv.JWTSecret, user.ID, user.Email, user.Role)
 	if err != nil {
-		slog.Error("jwt error", "error", err)
-		http.Error(w, "400 invalid email or password", http.StatusBadRequest)
+		slog.ErrorContext(ctx, "jwt error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(struct{
-		Token     string `json:"token"`
-		Message   string `json:"message"`
+	writeJSON(w, r, http.StatusOK, struct {
+		Token   string `json:"token"`
+		Message string `json:"message"`
 	}{
-			Token: token,
-			Message: "login successful",
-		})
-	if err != nil {
-		slog.Error("json encode error", "error", err)
-		http.Error(w, "400 invalid email or password", http.StatusBadRequest)
-	}
-	
+		Token:   token,
+		Message: "login successful",
+	})
 }
 
 const minPasswordLen = 8
@@ -167,3 +193,29 @@ func (srv *Pool) ChangePasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// GET /me
+// Who is logged in. Like ChangePasswordHandler, the user comes from the token, never from the request,
+// so nobody can ask for someone else's profile.
+func (srv *Pool) ProfileHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+
+	profile, err := srv.Repo.GetUser(ctx, claims.ID)
+	if errors.Is(err, repository.ErrUserNotFound) {
+		// valid token, but the account was deleted after it was issued
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "GetUser error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, profile)
+}
+

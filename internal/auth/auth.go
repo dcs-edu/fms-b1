@@ -33,7 +33,7 @@ func GenerateToken(jwtSecret []byte, id uuid.UUID, email string, role Role) (str
 		Email: email,
 		Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24*time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(6*time.Hour)),
 			IssuedAt: jwt.NewNumericDate(time.Now()),
 		},
 	}

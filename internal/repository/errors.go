@@ -18,6 +18,7 @@ var (
 	ErrStudentNotFound                = errors.New("student not found")
 	ErrBillNotFound                   = errors.New("bill not found")
 	ErrOverpayment                    = errors.New("payment is more than what is left on the bill")
+	ErrUserNotFound                   = errors.New("user not found")
 )
 
 // Postgres error codes: https://www.postgresql.org/docs/current/errcodes-appendix.html

@@ -18,6 +18,29 @@ import (
 	"github.com/Jxt-Eli/template/internal/repository"
 )
 
+// GET /utilities
+// Every bill of the active utilities: one row per utility per semester, with its bill_id.
+func (srv *Pool) ListUtilityHandler(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !slices.Contains(paymentStaff, claims.Role) {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	bills, err := srv.Repo.GetUtilities(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "ListUtilityHandler error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, bills)
+}
+
 // POST /utilities   {"util_name": "Tuition"}
 func (srv *Pool) CreateUtilityHandler(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
@@ -106,4 +129,30 @@ func (srv *Pool) CreateUtilityPriceHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, r, http.StatusCreated, price)
+}
+
+func (srv *Pool) RemoveUtilityHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims, ok := ctx.Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !slices.Contains(paymentStaff, claims.Role) {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	util_id := mux.Vars(r)["id"]
+	id, err := strconv.ParseInt(util_id, 10, 64)
+	if err != nil {
+		http.Error(w, "400 bad request", http.StatusBadRequest)
+		return
+	}
+	if err := srv.Repo.DisableUtility(ctx, id); err != nil {
+		slog.Error("RemoveUtilityHandler error:", "error", err)
+		http.Error(w, "500 internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
 }

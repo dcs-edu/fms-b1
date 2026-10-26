@@ -1,2 +1,4 @@
--- SET admin role for dev account and change email address
-UPDATE users SET role = 'admin', email = 'hajileayinomba@gmail.com' WHERE email = 'ayinombaeli@example.com';
+-- NOTE:this file was used to create an admin account directly into the database (file content has been removed)
+--
+-- SET admin role for dev account and change email address (after signing in as a normal account.)
+-- eg: UPDATE users SET role = 'admin', email = 'admin.account@example.com' WHERE email = 'admin.account@example.com';

@@ -1,16 +1,16 @@
 -include .env
 SCHEMA=./migrations/
-.PHONY: run migrate-up migrate-down
+.PHONY: build up down run migrate-up migrate-down dbversion
 
-build: ./cmd/api/build.go
-	@go build -o bin/build ./cmd/api/build.go
+build:
+	@go build -o bin/api ./cmd/api
 
 up:
-	@docker-compose up -d
-	# @docker-compose exec db sh -c 'until pg_isready -U jxt-eli -d db; do sleep 1; done'
+	@docker compose up -d
+	# @docker compose exec db sh -c 'until pg_isready -U jxt-eli -d db; do sleep 1; done'
 
 down:
-	@docker-compose down
+	@docker compose down
 
 migrate-up:
 	@echo "Applying migration files"

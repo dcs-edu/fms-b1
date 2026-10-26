@@ -23,7 +23,7 @@ func (srv *Pool) ChangeAuthZHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if claims.Role != auth.RoleAdmin {
+	if claims.Role != auth.RoleAdmin && claims.Role != auth.RolePrincipal{
 		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
 		return
 	}
@@ -55,4 +55,27 @@ func (srv *Pool) ChangeAuthZHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, r, http.StatusOK, updated)
+}
+
+// GET /admin/users
+// Everyone with an account and their role, so the admin can pick who to promote.
+func (srv *Pool) ShowUserRolesHandler (w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if claims.Role != auth.RoleAdmin && claims.Role != auth.RolePrincipal {
+		http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	users, err := srv.Repo.GetAllUsers(ctx)
+	if err != nil  {
+		slog.ErrorContext(ctx, "GetAllUsers error", "error", err)
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, r, http.StatusOK, users)
 }

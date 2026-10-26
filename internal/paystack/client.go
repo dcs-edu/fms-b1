@@ -38,27 +38,33 @@ type initRequest struct {
 	Amount    int64  `json:"amount"` // In pesewas
 	Email     string `json:"email"`
 	Reference string `json:"reference"`
+	// Where Paystack sends the payer's browser after checkout. omitempty: when it's empty the field
+	// isn't sent at all, and Paystack falls back to the callback URL set in its dashboard.
+	CallbackURL string `json:"callback_url,omitempty"`
 }
 type Client struct {
-	secretKey  string
-	baseURL    string
-	httpClient *http.Client
+	secretKey   string
+	baseURL     string
+	callbackURL string
+	httpClient  *http.Client
 }
 
-func NewClient(secretKey string) *Client {
+func NewClient(secretKey, callbackURL string) *Client {
 	return &Client{
-		secretKey:  secretKey,
-		baseURL:    "https://api.paystack.co",
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		secretKey:   secretKey,
+		baseURL:     "https://api.paystack.co",
+		callbackURL: callbackURL,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 func (c *Client) InitializeTransaction(ctx context.Context, amount int64, email, reference string) (authURL string, err error) {
 	url := fmt.Sprintf("%s/transaction/initialize", c.baseURL)
 	body, err := json.Marshal(initRequest{
-		Amount:    amount,
-		Email:     email,
-		Reference: reference,
+		Amount:      amount,
+		Email:       email,
+		Reference:   reference,
+		CallbackURL: c.callbackURL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request body: %w", err)

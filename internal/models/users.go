@@ -46,3 +46,15 @@ type Role struct {
 	Email        string    `json:"email"       db:"email"`
 	Role         auth.Role `json:"role"        db:"role"`
 }
+
+// ForgotPassword is the request body for asking for a reset code.
+type ForgotPassword struct {
+	Email        string    `json:"email"`
+}
+
+// ResetPassword is the request body for setting a new password with the code from the email.
+type ResetPassword struct {
+	Email        string    `json:"email"`
+	Code         string    `json:"code"`
+	NewPassword  string    `json:"new_password"`
+}
