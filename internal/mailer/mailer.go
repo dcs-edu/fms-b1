@@ -48,7 +48,7 @@ func (m *Mailer) Send(to, subject, body string) error {
 	c, err := smtp.NewClient(conn, m.host)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("smtp hello: %w", err)
+		return fmt.Errorf("smtp newclient: %w", err)
 	}
 	defer c.Close()
 

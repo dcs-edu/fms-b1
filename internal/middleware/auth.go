@@ -24,6 +24,9 @@ type statusRecorder struct {
 	status int
 }
 
+// fuckass struct and function overrides that do some stuff I don't understand myself
+// just to log the status code of the handler function
+
 func (rec *statusRecorder) WriteHeader(code int) {
 	rec.status = code
 	rec.ResponseWriter.WriteHeader(code)
